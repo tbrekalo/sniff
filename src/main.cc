@@ -13,11 +13,21 @@ int main(int argc, char** argv) {
     auto options =
         cxxopts::Options("sniff", "pair up potential reverse complement reads");
     /* clang-format off */
-    options.add_options()
+    options.add_options("general")
       ("h,help", "print help")
       ("v,version", "print version")
       ("t,threads", "number of threads to use",
-        cxxopts::value<std::uint32_t>()->default_value("1"))
+        cxxopts::value<std::uint32_t>()->default_value("1"));
+    options.add_options("heuristic")
+      ("p,percent",
+       "maximum allowed difference in length as % of shorter read's length",
+       cxxopts::value<double>()->default_value("0.05"))
+      ("l,sample-length", 
+       "maximum sample length from beginning/end of  sequence",
+       cxxopts::value<std::uint32_t>()->default_value("5000"))
+      ("e,edit-distance", "maximum allowed edit distance between samples",
+       cxxopts::value<std::uint32_t>()->default_value("100"));
+    options.add_options("input")
       ("input", "input fasta/fastq file", cxxopts::value<std::string>());
     /* clang-format on */
 
