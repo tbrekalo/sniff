@@ -42,13 +42,19 @@ if(NOT edlib_FOUND)
   endif()
 endif()
 
-FetchContent_MakeAvailable(bioparser biosoup cxxopts)
+FetchContent_Declare(
+  fmt
+  GIT_REPOSITORY https://github.com/fmtlib/fmt
+  GIT_TAG 9.1.0)
+
+FetchContent_MakeAvailable(bioparser biosoup cxxopts fmt)
 
 find_package(TBB)
 add_executable(sniff src/main.cc src/io.cc)
 target_include_directories(sniff
                            PRIVATE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>)
 target_link_libraries(sniff PRIVATE bioparser biosoup cxxopts edlib)
+target_link_libraries(sniff PRIVATE bioparser biosoup cxxopts edlib fmt)
 target_compile_options(
   sniff PRIVATE $<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address>
                 $<$<CONFIG:Debug,RelWithDebInfo>:-fno-omit-frame-pointer>)
