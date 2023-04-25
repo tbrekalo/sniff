@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
       ("l,sample-length", 
        "maximum sample length from beginning/end of  sequence",
        cxxopts::value<std::uint32_t>()->default_value("5000"))
-      ("e,edit-distance", "maximum allowed edit distance between samples",
+      ("e,max-edit-distance", "maximum allowed edit distance between samples",
        cxxopts::value<std::uint32_t>()->default_value("100"));
     options.add_options("input")
       ("input", "input fasta/fastq file", cxxopts::value<std::string>());
@@ -67,7 +67,13 @@ int main(int argc, char** argv) {
     auto timer = biosoup::Timer();
     timer.Start();
 
-    auto reads = sniff::LoadReads(reads_path);
+    auto pairs = sniff::FindReverseComplementPairs(
+        sniff::Config{.p = result["percent"].as<double>(),
+                      .length = result["sample_length"].as<std::uint32_t>(),
+                      .max_edit_distance =
+                          result["max_edit_distance"].as<std::uint32_t>()},
+        sniff::LoadReads(reads_path));
+
     fmt::print(stderr, "[sniff::main]({:12.3f})\n", timer.Stop());
 
   } catch (std::exception const& e) {
