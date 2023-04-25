@@ -46,10 +46,18 @@ FetchContent_MakeAvailable(bioparser biosoup cxxopts)
 
 find_package(TBB)
 add_executable(sniff src/main.cc src/io.cc)
-target_include_directories(sniff PRIVATE src)
+target_include_directories(sniff
+                           PRIVATE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>)
 target_link_libraries(sniff PRIVATE bioparser biosoup cxxopts edlib)
 target_compile_options(
   sniff PRIVATE $<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address>
                 $<$<CONFIG:Debug,RelWithDebInfo>:-fno-omit-frame-pointer>)
 target_link_options(sniff PRIVATE
                     $<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address>)
+
+set_target_properties(sniff PROPERTIES VERSION ${sniff_VERSION}
+                                       SOVERSION ${sniff_VERSION_MAJOR})
+configure_file(${PROJECT_SOURCE_DIR}/src/version.h.in
+               ${CMAKE_CURRENT_BINARY_DIR}/include/sniff/version.h)
+target_include_directories(
+  sniff PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/sniff>)

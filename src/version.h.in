@@ -1,0 +1,3 @@
+#define sniff_VERSION_MAJOR @sniff_VERSION_MAJOR@
+#define sniff_VERSION_MINOR @sniff_VERSION_MINOR@
+#define sniff_VERSION_PATCH @sniff_VERSION_PATCH@
