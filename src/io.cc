@@ -1,4 +1,4 @@
-#include "io.h"
+#include "sniff/io.h"
 
 #include "bioparser/fasta_parser.hpp"
 #include "bioparser/fastq_parser.hpp"

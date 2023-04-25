@@ -50,10 +50,19 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(bioparser biosoup cxxopts fmt)
 
 find_package(TBB)
-add_executable(sniff src/main.cc src/algo.cc src/io.cc)
+add_library(sniff_lib src/algo.cc src/io.cc)
+target_include_directories(
+  sniff_lib PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>
+                   $<INSTALL_INTERFACE:include>)
+target_link_libraries(
+  sniff_lib
+  PUBLIC biosoup TBB::tbb
+  PRIVATE bioparser edlib fmt)
+
+add_executable(sniff src/main.cc)
 target_include_directories(sniff
                            PRIVATE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>)
-target_link_libraries(sniff PRIVATE bioparser biosoup cxxopts edlib fmt)
+target_link_libraries(sniff PRIVATE cxxopts fmt sniff_lib)
 target_compile_options(
   sniff PRIVATE $<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address>
                 $<$<CONFIG:Debug,RelWithDebInfo>:-fno-omit-frame-pointer>)

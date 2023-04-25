@@ -1,4 +1,4 @@
-#include "algo.h"
+#include "sniff/algo.h"
 
 namespace sniff {
 
