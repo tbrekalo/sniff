@@ -3,14 +3,16 @@
 #include "bioparser/fasta_parser.hpp"
 #include "bioparser/fastq_parser.hpp"
 #include "biosoup/nucleic_acid.hpp"
+#include "biosoup/timer.hpp"
+#include "fmt/core.h"
 
 namespace sniff {
 
 static constexpr auto kFastaSuffxies =
-    std::array<char const *, 4>{".fasta", "fasta.gz", ".fa", ".fa.gz"};
+    std::array<char const*, 4>{".fasta", "fasta.gz", ".fa", ".fa.gz"};
 
 static constexpr auto kFastqSuffixes =
-    std::array<char const *, 4>{".fastq", ".fastq.gz", ".fq", ".fq.gz"};
+    std::array<char const*, 4>{".fastq", ".fastq.gz", ".fq", ".fq.gz"};
 
 static auto IsSuffixFor(std::string_view const suffix,
                         std::string_view const query) -> bool {
@@ -19,7 +21,7 @@ static auto IsSuffixFor(std::string_view const suffix,
              : false;
 }
 
-static auto CreateParser(std::filesystem::path const &path)
+static auto CreateParser(std::filesystem::path const& path)
     -> std::unique_ptr<bioparser::Parser<biosoup::NucleicAcid>> {
   using namespace std::placeholders;
   if (std::filesystem::exists(path)) {
@@ -38,12 +40,17 @@ static auto CreateParser(std::filesystem::path const &path)
       "[camel::detail::CreateParser] invalid file path: " + path.string());
 }
 
-auto LoadSequences(std::filesystem::path const &path)
+auto LoadReads(std::filesystem::path const& path)
     -> std::vector<std::unique_ptr<biosoup::NucleicAcid>> {
+  auto timer = biosoup::Timer();
+
+  timer.Start();
   auto parser = CreateParser(path);
   auto dst = parser->Parse(std::numeric_limits<std::uint64_t>::max());
+  fmt::print(stderr, "[sniff::LoadSequences]({:12.3f}) loaded: {} sequences\n",
+             timer.Stop(), dst.size());
 
   return dst;
 }
 
-} // namespace sniff
+}  // namespace sniff
