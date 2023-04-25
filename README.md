@@ -8,7 +8,7 @@ Heuristic tool for pairing up reverse complement reads in fasta/fastq files.
 - clang 10.1 or higher
 - intel tbb 2020.3
   - should be compatible with later oneapi versions
-- cmake 3.17 or higher
+- cmake 3.21 or higher
 - git 2.25.1 or higher
   - earlier version should do just fine
   - git is required for cmake to fetch par of internal dependencies
