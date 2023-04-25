@@ -6,9 +6,6 @@
 
 namespace sniff {
 
-static constexpr std::size_t kDefaultPileStorageFileSz = 1UL << 32UL; // 4GiB
-static constexpr std::size_t kDefaultSeqStorageFileSz = 1UL << 22UL;  // 4MiB
-
 static constexpr auto kFastaSuffxies =
     std::array<char const *, 4>{".fasta", "fasta.gz", ".fa", ".fa.gz"};
 
