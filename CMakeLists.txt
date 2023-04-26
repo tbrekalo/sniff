@@ -75,3 +75,7 @@ configure_file(${PROJECT_SOURCE_DIR}/src/version.h.in
                ${CMAKE_CURRENT_BINARY_DIR}/include/sniff/version.h)
 target_include_directories(
   sniff PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/sniff>)
+
+if(${PROJECT_IS_TOP_LEVEL})
+  include(${CMAKE_CURRENT_LIST_DIR}/test/SniffTest.cmake)
+endif()

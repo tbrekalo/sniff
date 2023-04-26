@@ -13,6 +13,10 @@ Heuristic tool for pairing up reverse complement reads in fasta/fastq files.
   - earlier version should do just fine
   - git is required for cmake to fetch par of internal dependencies
 
+### Test (optional) dependencies
+- Catch2
+  - fetched via cmake if missing
+
 ## Usage
 
 ```bash
