@@ -1,4 +1,5 @@
 import argparse
+import sys
 from typing import Dict, List, Tuple
 
 import numba
@@ -23,14 +24,14 @@ def encode_kmer(kmer: str) -> int:
 
 
 @numba.njit
-def hash(key: np.uint64, kMask: np.uint64):
-    key = ((~key) + (key << np.uint64(21))) & kMask
+def hash(key: np.uint64, mask: np.uint64):
+    key = ((~key) + (key << np.uint64(21))) & mask
     key = key ^ (key >> np.uint64(24))
-    key = ((key + (key << np.uint64(3))) + (key << np.uint64(8))) & kMask
+    key = ((key + (key << np.uint64(3))) + (key << np.uint64(8))) & mask
     key = key ^ (key >> np.uint64(14))
-    key = ((key + (key << np.uint64(2))) + (key << np.uint64(4))) & kMask
+    key = ((key + (key << np.uint64(2))) + (key << np.uint64(4))) & mask
     key = key ^ (key >> np.uint64(28))
-    key = (key + (key << np.uint64(31))) & kMask
+    key = (key + (key << np.uint64(31))) & mask
     return key
 
 
@@ -64,11 +65,25 @@ if __name__ == "__main__":
                         type=int, default=5, help='window length')
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
                         help='output in tsv with included hash values')
+    parser.add_argument('-d', '--debug', action='store_true', default=False,
+                        help='print debug info to stderr')
 
     args = parser.parse_args()
+    if args.debug:
+        for pos, hash, kmer in find_kmers(args.sequence, args.kmer_length):
+            print(
+                f'{pos}\t{hash}\t{encode_kmer(kmer)}\t{kmer}',
+                file=sys.stderr
+            )
+        print(file=sys.stderr)
+
+    if args.verbose:
+        print('pos\thash\tencoded\ttminimized')
     for pos, hash, mini in find_minimizers(
             args.sequence, args.kmer_length, args.window_length):
         if not args.verbose:
-            print(f'{pos},{mini}')
+            print(f'{pos},{encode_kmer(mini)}')
         else:
-            print(f'{pos}\t{hash}\t{mini}')
+            print('{}\t{}\t{}\t{}'.format(
+                pos, hash, encode_kmer(mini), mini
+            ))
