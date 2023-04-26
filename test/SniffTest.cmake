@@ -10,5 +10,7 @@ if(NOT Catch2_FOUND)
   list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 endif()
 
-add_executable(sniff_test ${CMAKE_CURRENT_LIST_DIR}/main.cc)
+add_executable(sniff_test 
+  ${CMAKE_CURRENT_LIST_DIR}/src/kmer.cc
+  ${CMAKE_CURRENT_LIST_DIR}/src/minimize.cc)
 target_link_libraries(sniff_test PRIVATE sniff_lib Catch2::Catch2WithMain)
