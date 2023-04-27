@@ -31,25 +31,38 @@ static auto CmpMatchByTargetPos(Match const& lhs, Match const& rhs) -> bool {
   return lhs.target_pos < rhs.target_pos;
 }
 
-static auto FindLongestChain(std::vector<Match>::const_iterator first,
-                             std::vector<Match>::const_iterator last) {
-  auto longest_idx = 0;
-  auto chains = std::vector<std::vector<Match>>{};
-  for (; first != last; ++first) {
-    auto it = std::lower_bound(chains.begin(), chains.end(), first->target_pos,
-                               [](std::vector<Match> const& match,
-                                  std::uint32_t const target_pos) -> bool {
-                                 return match.back().target_pos < target_pos;
-                               });
-    if (it == chains.end()) {
-      chains.push_back({*first});
-      if (it->size() > chains[longest_idx].size()) {
-        longest_idx = it - chains.begin();
-      }
+static auto FindLongestQueryChain(std::vector<Match>::const_iterator first,
+                                  std::vector<Match>::const_iterator last) {
+  auto const n = static_cast<std::uint32_t>(last - first);
+
+  auto chain = std::vector<std::uint32_t>{0};
+  auto prev = std::vector<std::uint32_t>(n, n);
+  for (std::uint32_t match_idx = 1; match_idx < n; ++match_idx) {
+    auto chain_idx =
+        std::lower_bound(
+            chain.begin(), chain.end(), (first + match_idx)->query_pos,
+            [first](std::uint32_t chain_head, std::uint32_t query_pos) -> bool {
+              return (first + chain_head)->query_pos < query_pos;
+            }) -
+        chain.begin();
+
+    if (chain_idx != chain.size()) {
+      prev[match_idx] = prev[chain[chain_idx]];
+      chain[chain_idx] = match_idx;
+    } else {
+      prev[match_idx] = chain.back();
+      chain.push_back(match_idx);
     }
   }
 
-  return chains[longest_idx];
+  auto dst = std::vector<Match>(chain.size());
+  for (std::uint32_t dst_idx = dst.size() - 1, match_idx = chain.back();
+       match_idx != n; --dst_idx) {
+    dst[dst_idx] = *(first + match_idx);
+    match_idx = prev[match_idx];
+  }
+
+  return dst;
 };
 
 auto Chain(ChainConfig cfg, std::vector<KMer> query_sketch,
@@ -83,10 +96,11 @@ auto Chain(ChainConfig cfg, std::vector<KMer> query_sketch,
 
   auto dst = std::vector<Overlap>();
   for (std::size_t i = 1, j = 0; i < matches.size(); ++i) {
-    if (matches[j].target_pos - matches[i].target_pos >
+    if (matches[i].target_pos - matches[j].target_pos >
         cfg.max_target_allowed_gap) {
-      if (j - i > cfg.min_target_chain_matches) {
-        auto chain = FindLongestChain(matches.begin() + i, matches.begin() + j);
+      if (i - j >= cfg.min_target_chain_matches) {
+        auto chain =
+            FindLongestQueryChain(matches.begin() + j, matches.begin() + i);
         dst.push_back(
             Overlap{.query_start = chain.front().query_pos,
                     .query_end = chain.back().query_pos + cfg.kmer_len,
@@ -94,6 +108,7 @@ auto Chain(ChainConfig cfg, std::vector<KMer> query_sketch,
                     .target_start = chain.front().target_pos,
                     .target_end = chain.back().target_pos + cfg.kmer_len});
       }
+      j = i;
     }
   }
 
