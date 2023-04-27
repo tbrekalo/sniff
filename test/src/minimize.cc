@@ -47,7 +47,8 @@ TEST_CASE("minimizeK7W7", "[minimize]") {
 // kmer length is less than the window length
 // kmer_length=7; window_length=7
 TEST_CASE("minimizeK5W7", "[minimize]") {
-  auto const minimizers = sniff::Minimize({.kmer_len=5, .window_len=7}, kTestSequence);
+  auto const minimizers =
+      sniff::Minimize({.kmer_len = 5, .window_len = 7}, kTestSequence);
   REQUIRE(minimizers.size() == kTestExpectedMinimizersK5W7.size());
   for (std::size_t i = 0; i < minimizers.size(); ++i) {
     CHECK(kTestExpectedMinimizersK5W7[i] == minimizers[i]);
