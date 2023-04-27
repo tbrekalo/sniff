@@ -8,12 +8,14 @@ struct KMer {
   std::uint32_t position;
   std::uint64_t value;
 
-  constexpr auto operator==(KMer const& that) const noexcept -> bool {
-    return position == that.position && value == that.value;
+  friend constexpr auto operator==(KMer const& lhs, KMer const& rhs) noexcept
+      -> bool {
+    return lhs.position == rhs.position && lhs.value == rhs.value;
   }
 
-  constexpr auto operator!=(KMer const& that) const noexcept -> bool {
-    return !(*this == that);
+  friend constexpr auto operator!=(KMer const& lhs, KMer const& rhs) noexcept
+      -> bool {
+    return !(lhs == rhs);
   }
 };
 
