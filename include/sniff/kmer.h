@@ -5,7 +5,7 @@
 namespace sniff {
 
 struct KMer {
-  std::uint64_t position;
+  std::uint32_t position;
   std::uint64_t value;
 
   constexpr auto operator==(KMer const& that) const noexcept -> bool {

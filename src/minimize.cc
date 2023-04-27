@@ -41,12 +41,12 @@ auto Hash(std::uint64_t val, std::uint64_t const kMask) -> std::uint64_t {
 
 namespace sniff {
 
-auto Minimize(std::string_view sequence, std::uint32_t kmer_len,
-              std::uint32_t window_len) -> std::vector<KMer> {
+auto Minimize(MinimizeConfig cfg, std::string_view sequence)
+    -> std::vector<KMer> {
   auto dst = std::vector<KMer>();
 
   auto const mask =
-      (1ULL << (static_cast<std::uint64_t>(kmer_len) * 2U)) - 1ULL;
+      (1ULL << (static_cast<std::uint64_t>(cfg.kmer_len) * 2U)) - 1ULL;
   auto const shift_kmer = [mask](std::uint64_t kmer_val,
                                  char base) -> std::uint64_t {
     return ((kmer_val << 2ULL) | kNucleotideCoder[base]) & mask;
@@ -70,15 +70,15 @@ auto Minimize(std::string_view sequence, std::uint32_t kmer_len,
   auto kmer = std::uint64_t{};
   for (std::uint32_t i = 0; i < sequence.size(); ++i) {
     kmer = shift_kmer(kmer, sequence[i]);
-    if (i >= kmer_len + window_len - 1) {
-      window_update(i - (window_len + kmer_len - 1));
+    if (i >= cfg.kmer_len + cfg.window_len - 1) {
+      window_update(i - (cfg.window_len + cfg.kmer_len - 1));
       if (dst.empty() || dst.back() != window.front().second) {
         dst.push_back(window.front().second);
       }
     }
-    if (i >= kmer_len - 1) {
+    if (i >= cfg.kmer_len - 1) {
       window_push(Hash(kmer, mask),
-                  KMer{.position = i - (kmer_len - 1), .value = kmer});
+                  KMer{.position = i - (cfg.kmer_len - 1), .value = kmer});
     }
   }
 

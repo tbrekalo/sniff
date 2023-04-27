@@ -7,7 +7,12 @@
 
 namespace sniff {
 
-auto Minimize(std::string_view sequence, std::uint32_t kmer_len,
-              std::uint32_t window_len) -> std::vector<KMer>;
+struct MinimizeConfig {
+  std::uint32_t kmer_len = 15;
+  std::uint32_t window_len = 5;
+};
+
+auto Minimize(MinimizeConfig cfg, std::string_view sequence)
+    -> std::vector<KMer>;
 
 }  // namespace sniff
