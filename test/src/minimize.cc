@@ -1,7 +1,6 @@
 #include "sniff/minimize.h"
 
 #include <array>
-#include <utility>
 
 #include "catch2/catch_test_macros.hpp"
 
