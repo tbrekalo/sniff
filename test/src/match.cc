@@ -28,6 +28,22 @@ static constexpr auto kExpectedMatches = std::array<sniff::Match, 4>{
     sniff::Match{.query_pos = 10, .target_pos = 17},
 };
 
+TEST_CASE("match-equality", "[match]") {
+  REQUIRE(sniff::Match{} == sniff::Match{});
+  REQUIRE(sniff::Match{0, 1} == sniff::Match{0, 1});
+  REQUIRE_FALSE(sniff::Match{1, 0} == sniff::Match{0, 1});
+  REQUIRE_FALSE(sniff::Match{0, 1} == sniff::Match{1, 1});
+  REQUIRE_FALSE(sniff::Match{42, 314} == sniff::Match{101, 404});
+}
+
+TEST_CASE("match-inequality", "[match]") {
+  REQUIRE_FALSE(sniff::Match{} != sniff::Match{});
+  REQUIRE_FALSE(sniff::Match{0, 1} == sniff::Match{1, 0});
+  REQUIRE_FALSE(sniff::Match{1, 0} == sniff::Match{0, 1});
+  REQUIRE_FALSE(sniff::Match{0, 1} == sniff::Match{1, 1});
+  REQUIRE_FALSE(sniff::Match{42, 314} == sniff::Match{101, 404});
+}
+
 TEST_CASE("make-matches", "[match][kmer]") {
   auto const matches = sniff::MakeMatches(kQueryKMers, kTargetKMers);
   REQUIRE(matches.size() == kExpectedMatches.size());
