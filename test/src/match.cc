@@ -28,6 +28,11 @@ static constexpr auto kExpectedMatches = std::array<sniff::Match, 4>{
     sniff::Match{.query_pos = 10, .target_pos = 17},
 };
 
+static auto CmpMatchByTargetPos(sniff::Match const& lhs,
+                                sniff::Match const& rhs) -> bool {
+  return lhs.target_pos < rhs.target_pos;
+}
+
 TEST_CASE("match-equality", "[match]") {
   REQUIRE(sniff::Match{} == sniff::Match{});
   REQUIRE(sniff::Match{0, 1} == sniff::Match{0, 1});
@@ -45,8 +50,10 @@ TEST_CASE("match-inequality", "[match]") {
 }
 
 TEST_CASE("make-matches", "[match][kmer]") {
-  auto const matches = sniff::MakeMatches(kQueryKMers, kTargetKMers);
+  auto matches = sniff::MakeMatches(kQueryKMers, kTargetKMers);
   REQUIRE(matches.size() == kExpectedMatches.size());
+
+  std::sort(matches.begin(), matches.end(), CmpMatchByTargetPos);
   for (std::size_t i = 0; i < matches.size(); ++i) {
     CHECK(matches[i] == kExpectedMatches[i]);
   }

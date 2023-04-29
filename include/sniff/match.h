@@ -19,7 +19,6 @@ struct Match {
   }
 };
 
-// returns vector of matches sorted by target position
 auto MakeMatches(std::vector<KMer> query_sketch,
                  std::vector<KMer> target_sketch) -> std::vector<Match>;
 

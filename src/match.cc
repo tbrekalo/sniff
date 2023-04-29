@@ -7,10 +7,6 @@ static auto CmpKMerByValPos(KMer const& lhs, KMer const& rhs) -> bool {
                                 : lhs.position < rhs.position;
 }
 
-static auto CmpMatchByTargetPos(Match const& lhs, Match const& rhs) -> bool {
-  return lhs.target_pos < rhs.target_pos;
-}
-
 auto MakeMatches(std::vector<KMer> query_sketch,
                  std::vector<KMer> target_sketch) -> std::vector<Match> {
   auto dst = std::vector<Match>();
@@ -39,7 +35,6 @@ auto MakeMatches(std::vector<KMer> query_sketch,
   }
   /* clang-format on */
 
-  std::sort(dst.begin(), dst.end(), CmpMatchByTargetPos);
   return dst;
 }
 
