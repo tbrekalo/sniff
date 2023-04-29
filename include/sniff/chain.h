@@ -1,10 +1,6 @@
 #pragma once
 
-#include <cstdint>
-#include <string>
-#include <vector>
-
-#include "sniff/kmer.h"
+#include "sniff/match.h"
 #include "sniff/overlap.h"
 
 namespace sniff {
@@ -15,7 +11,6 @@ struct ChainConfig {
   std::uint32_t kmer_len;
 };
 
-auto Chain(ChainConfig cfg, std::vector<KMer> query_sketch,
-           std::vector<KMer> target_sketch) -> std::vector<Overlap>;
+auto Chain(ChainConfig cfg, std::vector<Match> matches) -> std::vector<Overlap>;
 
 }  // namespace sniff
