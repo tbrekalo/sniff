@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+namespace sniff {
+
 struct Overlap {
   std::uint32_t query_start;
   std::uint32_t query_end;
@@ -9,3 +11,5 @@ struct Overlap {
   std::uint32_t target_start;
   std::uint32_t target_end;
 };
+
+}  // namespace sniff

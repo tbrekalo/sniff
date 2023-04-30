@@ -20,7 +20,7 @@ TEST_CASE("chain-one-overlap", "[chain][overlap]") {
       sniff::Match{.query_pos = 11, .target_pos = 13},
   };
 
-  auto const assertions = [](std::vector<Overlap> overlaps) -> void {
+  auto const assertions = [](std::vector<sniff::Overlap> overlaps) -> void {
     REQUIRE(overlaps.size() == 1);
 
     CHECK(overlaps[0].query_start == 4);
@@ -44,14 +44,14 @@ TEST_CASE("chain-one-overlap", "[chain][overlap]") {
 
 TEST_CASE("chain-two-overlaps", "[chain][overlap]") {
   constexpr auto kExpectedOverlaps =
-      std::array<Overlap, 2>{Overlap{.query_start = 0,
-                                     .query_end = 14,
-                                     .target_start = 1,
-                                     .target_end = 12},
-                             Overlap{.query_start = 113,
-                                     .query_end = 127,
-                                     .target_start = 108,
-                                     .target_end = 127}};
+      std::array<sniff::Overlap, 2>{sniff::Overlap{.query_start = 0,
+                                                   .query_end = 14,
+                                                   .target_start = 1,
+                                                   .target_end = 12},
+                                    sniff::Overlap{.query_start = 113,
+                                                   .query_end = 127,
+                                                   .target_start = 108,
+                                                   .target_end = 127}};
 
   auto rng_engine = std::mt19937{42};
   auto matches = std::vector<sniff::Match>{
