@@ -1,16 +1,15 @@
-#include "sniff/chain.h"
+#include "sniff/map.h"
 
 #include <array>
 #include <random>
 
 #include "catch2/catch_test_macros.hpp"
 
-static constexpr auto kChainCfg =
-    sniff::ChainConfig{.min_target_chain_matches = 2,
-                       .max_target_allowed_gap = 100,
-                       .kmer_len = 5};
+static constexpr auto kMapCfg = sniff::MapConfig{.min_target_chain_matches = 2,
+                                                 .max_target_allowed_gap = 100,
+                                                 .kmer_len = 5};
 
-TEST_CASE("chain-one-overlap", "[chain][overlap]") {
+TEST_CASE("map-one-overlap", "[map][overlap]") {
   auto rng_engine = std::mt19937{42};
   auto matches = std::vector<sniff::Match>{
       sniff::Match{.query_pos = 13, .target_pos = 1},
@@ -22,7 +21,6 @@ TEST_CASE("chain-one-overlap", "[chain][overlap]") {
 
   auto const assertions = [](std::vector<sniff::Overlap> overlaps) -> void {
     REQUIRE(overlaps.size() == 1);
-
     CHECK(overlaps[0].query_start == 4);
     CHECK(overlaps[0].query_end == 16);
 
@@ -30,19 +28,19 @@ TEST_CASE("chain-one-overlap", "[chain][overlap]") {
     CHECK(overlaps[0].target_end == 18);
   };
 
-  SECTION("2nd-chain-is-dominant") {
+  SECTION("2nd-map-is-dominant") {
     std::shuffle(matches.begin(), matches.end(), rng_engine);
-    assertions(sniff::Chain(kChainCfg, matches));
+    assertions(sniff::Map(kMapCfg, matches));
   }
 
-  SECTION("two-equal-dominant-chains-one-after-another") {
+  SECTION("two-equal-dominant-maps-one-after-another") {
     matches.push_back(sniff::Match{.query_pos = 21, .target_pos = 6});
     std::shuffle(matches.begin(), matches.end(), rng_engine);
-    assertions(sniff::Chain(kChainCfg, matches));
+    assertions(sniff::Map(kMapCfg, matches));
   }
 }
 
-TEST_CASE("chain-two-overlaps", "[chain][overlap]") {
+TEST_CASE("map-two-overlaps", "[map][overlap]") {
   constexpr auto kExpectedOverlaps =
       std::array<sniff::Overlap, 2>{sniff::Overlap{.query_start = 0,
                                                    .query_end = 14,
@@ -65,7 +63,7 @@ TEST_CASE("chain-two-overlaps", "[chain][overlap]") {
   };
 
   std::shuffle(matches.begin(), matches.end(), rng_engine);
-  auto const overlaps = sniff::Chain(kChainCfg, matches);
+  auto const overlaps = sniff::Map(kMapCfg, matches);
 
   REQUIRE(overlaps.size() == kExpectedOverlaps.size());
 }

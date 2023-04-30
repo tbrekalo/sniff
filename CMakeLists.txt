@@ -53,9 +53,9 @@ find_package(TBB)
 add_library(
   sniff_lib
   src/algo.cc
-  src/chain.cc
   src/io.cc
   src/kmer.cc
+  src/map.cc
   src/match.cc
   src/minimize.cc
   src/overlap.cc)

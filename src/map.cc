@@ -1,4 +1,4 @@
-#include "sniff/chain.h"
+#include "sniff/map.h"
 
 #include <algorithm>
 #include <iterator>
@@ -46,8 +46,7 @@ static auto FindLongestQueryChain(std::vector<Match>::const_iterator first,
   return dst;
 };
 
-auto Chain(ChainConfig cfg, std::vector<Match> matches)
-    -> std::vector<Overlap> {
+auto Map(MapConfig cfg, std::vector<Match> matches) -> std::vector<Overlap> {
   std::sort(matches.begin(), matches.end(), CmpMatchByTargetPos);
   matches.push_back(
       Match{.query_pos = std::numeric_limits<std::uint32_t>::max(),

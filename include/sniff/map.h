@@ -5,12 +5,12 @@
 
 namespace sniff {
 
-struct ChainConfig {
+struct MapConfig {
   std::uint32_t min_target_chain_matches;
   std::uint32_t max_target_allowed_gap;
   std::uint32_t kmer_len;
 };
 
-auto Chain(ChainConfig cfg, std::vector<Match> matches) -> std::vector<Overlap>;
+auto Map(MapConfig cfg, std::vector<Match> matches) -> std::vector<Overlap>;
 
 }  // namespace sniff
