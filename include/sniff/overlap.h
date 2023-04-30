@@ -13,5 +13,6 @@ struct Overlap {
 };
 
 auto OverlapLength(Overlap const& ovlp) -> std::uint32_t;
+auto OverlapError(Overlap const& ovlp) -> double;
 
 }  // namespace sniff

@@ -14,5 +14,7 @@ add_executable(
   sniff_test
   ${CMAKE_CURRENT_LIST_DIR}/src/chain.cc ${CMAKE_CURRENT_LIST_DIR}/src/kmer.cc
   ${CMAKE_CURRENT_LIST_DIR}/src/match.cc
-  ${CMAKE_CURRENT_LIST_DIR}/src/minimize.cc)
+  ${CMAKE_CURRENT_LIST_DIR}/src/minimize.cc
+  ${CMAKE_CURRENT_LIST_DIR}/src/overlap.cc
+  )
 target_link_libraries(sniff_test PRIVATE sniff_lib Catch2::Catch2WithMain)
