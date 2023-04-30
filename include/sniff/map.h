@@ -6,7 +6,6 @@
 
 namespace sniff {
 
-
 auto Map(MapConfig cfg, std::vector<Match> matches) -> std::vector<Overlap>;
 
 }  // namespace sniff
