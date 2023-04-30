@@ -12,4 +12,6 @@ struct Overlap {
   std::uint32_t target_end;
 };
 
+auto OverlapLength(Overlap const& ovlp) -> std::uint32_t;
+
 }  // namespace sniff

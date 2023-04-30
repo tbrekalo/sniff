@@ -50,8 +50,15 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(bioparser biosoup cxxopts fmt)
 
 find_package(TBB)
-add_library(sniff_lib src/algo.cc src/chain.cc src/io.cc src/kmer.cc
-                      src/match.cc src/minimize.cc)
+add_library(
+  sniff_lib
+  src/algo.cc
+  src/chain.cc
+  src/io.cc
+  src/kmer.cc
+  src/match.cc
+  src/minimize.cc
+  src/overlap.cc)
 target_include_directories(
   sniff_lib PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>
                    $<INSTALL_INTERFACE:include>)
