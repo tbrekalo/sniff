@@ -46,7 +46,7 @@ static auto ExtractReverseComplementQueries(
     auto tmp = biosoup::NucleicAcid("", reads[indices[i]]->InflateData());
     tmp.ReverseAndComplement();
 
-    dst.push_back(tmp.InflateData(std::min(tmp.inflated_len, max_sample_len)));
+    dst[i] = tmp.InflateData(0, std::min(tmp.inflated_len, max_sample_len));
   }
 
   return dst;
@@ -65,17 +65,19 @@ static auto FindLongestOverlap(AlgoConfig const& cfg,
 
   auto const target_sketch = Minimize(cfg.minimize_cfg, target);
   for (std::size_t i = 0; i < queries.size(); ++i) {
-    auto overlaps = sniff::Map(
-        cfg.map_cfg,
-        sniff::MakeMatches(sniff::Minimize(cfg.minimize_cfg, queries[i]),
-                           target_sketch));
+    auto query_sketch = sniff::Minimize(cfg.minimize_cfg, queries[i]);
+    auto overlaps =
+        sniff::Map(cfg.map_cfg,
+                   sniff::MakeMatches(std::move(query_sketch), target_sketch));
 
     if (overlaps.size() != 1) {
       continue;
     }
 
     if (auto const ovlp_len = calc_ovlp_target_len(overlaps.front());
-        static_cast<double>(ovlp_len) / target.length() > 0.98) {
+        static_cast<double>(ovlp_len) / target.length() > 0.90) {
+      fmt::print(stderr, "{}/{}\n", calc_ovlp_target_len(overlaps.front()),
+                 target.length());
       if (ovlp_len > calc_ovlp_target_len(dst_ovlp)) {
         dst = i;
       }
@@ -123,17 +125,25 @@ auto FindReverseComplementPairs(
     }
   };
 
-  tbb::parallel_for(std::size_t(0), length_related_reads.size(),
-                    [cfg, &reads, &matches, &length_related_reads, &n_mapped,
-                     &report_status](std::size_t idx) -> void {
-                      auto queries = ExtractReverseComplementQueries(
-                          reads, length_related_reads[idx], cfg.length);
-                      auto target = reads[idx]->InflateData(0, cfg.length);
-                      matches[idx] = FindLongestOverlap(cfg, queries, target);
+  tbb::parallel_for(
+      std::size_t(0), length_related_reads.size(),
+      [cfg, &reads, &matches, &length_related_reads, &n_mapped,
+       &report_status](std::size_t idx) -> void {
+        auto queries = ExtractReverseComplementQueries(
+            reads, length_related_reads[idx], cfg.length);
+        auto target = reads[idx]->InflateData(0, cfg.length);
+        matches[idx] = [&index_mapping = length_related_reads[idx]](
+                           auto opt) -> std::optional<std::size_t> {
+          if (opt) {
+            return index_mapping[*opt];
+          }
 
-                      ++n_mapped;
-                      report_status();
-                    });
+          return std::nullopt;
+        }(FindLongestOverlap(cfg, queries, target));
+
+        ++n_mapped;
+        report_status();
+      });
 
   for (std::size_t i = 0; i < matches.size(); ++i) {
     if (matches[i]) {

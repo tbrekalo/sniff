@@ -54,7 +54,7 @@ auto Map(MapConfig cfg, std::vector<Match> matches) -> std::vector<Overlap> {
 
   auto dst = std::vector<Overlap>();
   for (std::size_t i = 1, j = 0; i < matches.size(); ++i) {
-    if (matches[i].target_pos - matches[j].target_pos >
+    if (matches[i].target_pos - matches[i - 1].target_pos >
         cfg.max_chain_gap_length) {
       if (i - j >= cfg.min_chain_length) {
         auto chain =
