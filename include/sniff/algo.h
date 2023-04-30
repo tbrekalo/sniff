@@ -5,6 +5,9 @@
 #include <utility>
 #include <vector>
 
+#include "sniff/map_config.h"
+#include "sniff/minimize_config.h"
+
 namespace biosoup {
 class NucleicAcid;
 }
@@ -14,7 +17,8 @@ namespace sniff {
 struct AlgoConfig {
   double p;
   std::uint32_t length;
-  std::uint32_t max_edit_distance;
+  MapConfig map_cfg;
+  MinimizeConfig minimize_cfg;
 };
 
 auto FindReverseComplementPairs(

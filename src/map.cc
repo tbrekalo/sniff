@@ -55,8 +55,8 @@ auto Map(MapConfig cfg, std::vector<Match> matches) -> std::vector<Overlap> {
   auto dst = std::vector<Overlap>();
   for (std::size_t i = 1, j = 0; i < matches.size(); ++i) {
     if (matches[i].target_pos - matches[j].target_pos >
-        cfg.max_target_allowed_gap) {
-      if (i - j >= cfg.min_target_chain_matches) {
+        cfg.max_chain_gap_length) {
+      if (i - j >= cfg.min_chain_length) {
         auto chain =
             FindLongestQueryChain(matches.begin() + j, matches.begin() + i);
         dst.push_back(

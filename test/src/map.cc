@@ -5,8 +5,8 @@
 
 #include "catch2/catch_test_macros.hpp"
 
-static constexpr auto kMapCfg = sniff::MapConfig{.min_target_chain_matches = 2,
-                                                 .max_target_allowed_gap = 100,
+static constexpr auto kMapCfg = sniff::MapConfig{.min_chain_length = 2,
+                                                 .max_chain_gap_length = 100,
                                                  .kmer_len = 5};
 
 TEST_CASE("map-one-overlap", "[map][overlap]") {

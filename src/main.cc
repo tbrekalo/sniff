@@ -7,13 +7,14 @@
 #include "biosoup/timer.hpp"
 #include "cxxopts.hpp"
 #include "fmt/core.h"
+#include "tbb/task_arena.h"
 #include "version.h"
 
 std::atomic<std::uint32_t> biosoup::NucleicAcid::num_objects = 0;
 
 // sniff
-#include "algo.h"
-#include "io.h"
+#include "sniff/algo.h"
+#include "sniff/io.h"
 
 int main(int argc, char** argv) {
   try {
@@ -28,12 +29,19 @@ int main(int argc, char** argv) {
     options.add_options("heuristic")
       ("p,percent",
        "maximum allowed difference in length as % of shorter read's length",
-       cxxopts::value<double>()->default_value("0.05"))
-      ("l,sample-length", 
+       cxxopts::value<double>()->default_value("0.001"))
+      ("l,query-length", 
        "maximum sample length from beginning/end of  sequence",
-       cxxopts::value<std::uint32_t>()->default_value("5000"))
-      ("e,max-edit-distance", "maximum allowed edit distance between samples",
-       cxxopts::value<std::uint32_t>()->default_value("100"));
+       cxxopts::value<std::uint32_t>()->default_value("5000"));
+    options.add_options("mapping")
+      ("k,kmer-length", "kmer length used in mapping",
+       cxxopts::value<std::uint32_t>()->default_value("15"))
+      ("w,window-length", "window length used in mapping",
+       cxxopts::value<std::uint32_t>()->default_value("5"))
+      ("c,chain", "minimum chain length (in kmers)",
+       cxxopts::value<std::uint32_t>()->default_value("4"))
+      ("g,gap", "maximum gap between minimizers when chaining",
+       cxxopts::value<std::uint32_t>()->default_value("250"));
     options.add_options("input")
       ("input", "input fasta/fastq file", cxxopts::value<std::string>());
     /* clang-format on */
@@ -64,18 +72,32 @@ int main(int argc, char** argv) {
     auto const reads_path =
         std::filesystem::path(result["input"].as<std::string>());
 
+    auto task_arena = tbb::task_arena(n_threads);
     auto timer = biosoup::Timer();
     timer.Start();
 
-    auto pairs = sniff::FindReverseComplementPairs(
-        sniff::Config{.p = result["percent"].as<double>(),
-                      .length = result["sample_length"].as<std::uint32_t>(),
-                      .max_edit_distance =
-                          result["max_edit_distance"].as<std::uint32_t>()},
-        sniff::LoadReads(reads_path));
+    task_arena.execute([&] {
+      auto pairs = sniff::FindReverseComplementPairs(
+          sniff::AlgoConfig{
+              .p = result["percent"].as<double>(),
+              .length = result["query-length"].as<std::uint32_t>(),
+              .map_cfg =
+                  sniff::MapConfig{
+                      .min_chain_length = result["chain"].as<std::uint32_t>(),
+                      .max_chain_gap_length = result["gap"].as<std::uint32_t>(),
+                      .kmer_len = result["kmer-length"].as<std::uint32_t>()},
+              .minimize_cfg =
+                  sniff::MinimizeConfig{
+                      .kmer_len = result["kmer-length"].as<std::uint32_t>(),
+                      .window_len =
+                          result["window-length"].as<std::uint32_t>()}},
+          sniff::LoadReads(reads_path));
+      for (auto const& [lhs, rhs] : pairs) {
+        fmt::print("{},{}\n", lhs, rhs);
+      }
+    });
 
     fmt::print(stderr, "[sniff::main]({:12.3f})\n", timer.Stop());
-
   } catch (std::exception const& e) {
     std::cerr << e.what() << std::endl;
   }
