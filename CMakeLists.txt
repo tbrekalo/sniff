@@ -56,8 +56,10 @@ add_library(
   src/io.cc
   src/kmer.cc
   src/map.cc
+  src/map_config.cc
   src/match.cc
   src/minimize.cc
+  src/minimize_config.cc
   src/overlap.cc)
 target_include_directories(
   sniff_lib PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>
