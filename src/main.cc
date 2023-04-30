@@ -1,6 +1,4 @@
-#include <cstdint>
 #include <cstdlib>
-#include <iostream>
 
 // 3rd party dependencies
 #include "biosoup/nucleic_acid.hpp"
@@ -29,7 +27,7 @@ int main(int argc, char** argv) {
     options.add_options("heuristic")
       ("p,percent",
        "maximum allowed difference in length as % of shorter read's length",
-       cxxopts::value<double>()->default_value("0.001"))
+       cxxopts::value<double>()->default_value("0.01"))
       ("l,query-length", 
        "maximum sample length from beginning/end of  sequence",
        cxxopts::value<std::uint32_t>()->default_value("5000"));
@@ -51,16 +49,13 @@ int main(int argc, char** argv) {
 
     auto early_quit = false;
     if (result.count("version")) {
-      /* clang-format off */
-      std::cout << sniff_VERSION_MAJOR << '.'
-                << sniff_VERSION_MINOR << '.'
-                << sniff_VERSION_PATCH << std::endl;
-      /* clang-format on */
+      fmt::print(stderr, "{}.{}.{}\n", sniff_VERSION_MAJOR, sniff_VERSION_MINOR,
+                 sniff_VERSION_PATCH);
       early_quit = true;
     }
 
     if (result.count("help")) {
-      std::cout << options.help() << std::endl;
+      fmt::print(stderr, "{}\n", options.help());
       early_quit = true;
     }
 
@@ -99,7 +94,7 @@ int main(int argc, char** argv) {
 
     fmt::print(stderr, "[sniff::main]({:12.3f})\n", timer.Stop());
   } catch (std::exception const& e) {
-    std::cerr << e.what() << std::endl;
+    fmt::print(stderr, "{}\n", e.what());
   }
 
   return EXIT_SUCCESS;

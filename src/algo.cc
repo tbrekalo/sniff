@@ -75,9 +75,7 @@ static auto FindLongestOverlap(AlgoConfig const& cfg,
     }
 
     if (auto const ovlp_len = calc_ovlp_target_len(overlaps.front());
-        static_cast<double>(ovlp_len) / target.length() > 0.90) {
-      fmt::print(stderr, "{}/{}\n", calc_ovlp_target_len(overlaps.front()),
-                 target.length());
+        static_cast<double>(ovlp_len) / target.length() > 1.0 - cfg.p) {
       if (ovlp_len > calc_ovlp_target_len(dst_ovlp)) {
         dst = i;
       }
