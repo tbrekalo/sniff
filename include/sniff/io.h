@@ -10,7 +10,7 @@ class NucleicAcid;
 
 namespace sniff {
 
-auto LoadReads(std::filesystem::path const &path)
+auto LoadReads(std::filesystem::path const& path)
     -> std::vector<std::unique_ptr<biosoup::NucleicAcid>>;
 
 }
