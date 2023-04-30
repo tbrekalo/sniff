@@ -14,6 +14,7 @@ Heuristic tool for pairing up reverse complement reads in fasta/fastq files.
   - git is required for cmake to fetch par of internal dependencies
 
 ### Test (optional) dependencies
+
 - Catch2
   - fetched via cmake if missing
 
@@ -30,15 +31,20 @@ Usage:
   -t, --threads arg  number of threads to use (default: 1)
 
  heuristic options:
-  -p, --percent arg        maximum allowed difference in length as % of
-                           shorter read's length (default: 0.05)
-  -l, --sample-length arg  maximum sample length from beginning/end of
-                           sequence (default: 5000)
-  -e, --edit-distance arg  maximum allowed edit distance between samples
-                           (default: 100)
+  -p, --percent arg       maximum allowed difference in length as % of
+                          shorter read's length (default: 0.01)
+  -l, --query-length arg  maximum sample length from beginning/end of
+                          sequence (default: 5000)
 
  input options:
-      --input arg  input fasta/fastq file
+
+ mapping options:
+  -k, --kmer-length arg    kmer length used in mapping (default: 15)
+  -w, --window-length arg  window length used in mapping (default: 5)
+  -c, --chain arg          minimum chain length (in kmers) (default: 4)
+  -g, --gap arg            maximum gap between minimizers when chaining
+                           (default: 250)
+
 ```
 
 ## Methods
