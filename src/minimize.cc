@@ -41,8 +41,8 @@ auto Hash(std::uint64_t val, std::uint64_t const kMask) -> std::uint64_t {
 
 namespace sniff {
 
-auto Minimize(MinimizeConfig cfg, std::string_view sequence)
-    -> std::vector<KMer> {
+auto Minimize(MinimizeConfig cfg, std::uint32_t read_id,
+              std::string_view sequence) -> std::vector<KMer> {
   auto dst = std::vector<KMer>();
 
   auto const mask =

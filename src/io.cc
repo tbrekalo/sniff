@@ -1,12 +1,21 @@
 #include "sniff/io.h"
 
+#include <iterator>
+
+// 3rd party
 #include "bioparser/fasta_parser.hpp"
 #include "bioparser/fastq_parser.hpp"
 #include "biosoup/nucleic_acid.hpp"
 #include "biosoup/timer.hpp"
 #include "fmt/core.h"
+#include "tbb/parallel_for.h"
+
+// sniff
+#include "sniff/minimize.h"
 
 namespace sniff {
+
+static constexpr auto kChunkSize = 1U << 30U;  // 1 GiB
 
 static constexpr auto kFastaSuffxies =
     std::array<char const*, 4>{".fasta", "fasta.gz", ".fa", ".fa.gz"};
@@ -40,14 +49,50 @@ static auto CreateParser(std::filesystem::path const& path)
       "[camel::detail::CreateParser] invalid file path: " + path.string());
 }
 
-auto LoadReads(std::filesystem::path const& path)
-    -> std::vector<std::unique_ptr<biosoup::NucleicAcid>> {
+auto LoadSketches(Config cfg, std::filesystem::path const& path)
+    -> std::vector<Sketch> {
   auto timer = biosoup::Timer();
 
   timer.Start();
   auto parser = CreateParser(path);
-  auto dst = parser->Parse(std::numeric_limits<std::uint64_t>::max());
-  fmt::print(stderr, "[sniff::LoadSequences]({:12.3f}) loaded: {} sequences\n",
+  auto dst = std::vector<Sketch>();
+
+  for (std::vector<Sketch> buff; true;) {
+    auto reads = parser->Parse(kChunkSize);
+    if (reads.empty()) {
+      break;
+    }
+
+    buff.resize(reads.size());
+    tbb::parallel_for(
+        std::size_t(0), reads.size(),
+        [&cfg, &reads, &buff](std::size_t idx) -> void {
+          auto sample = reads[idx]->InflateData(0, cfg.sample_length);
+          reads[idx]->ReverseAndComplement();
+          auto rc_sample = reads[idx]->InflateData(0, cfg.sample_length);
+
+          buff[idx] = Sketch{
+              .read_identifier{.read_id = reads[idx]->id,
+                               .read_name = reads[idx]->name},
+
+              .read_len = reads[idx]->inflated_len,
+              .minimizers = Minimize(cfg.minimize_cfg, reads[idx]->id, sample),
+              .rc_minimizers =
+                  Minimize(cfg.minimize_cfg, reads[idx]->id, rc_sample)
+
+          };
+        });
+
+    dst.insert(dst.end(), std::make_move_iterator(buff.begin()),
+               std::make_move_iterator(buff.end()));
+
+    fmt::print(stderr,
+               "\r[sniff::LoadSequences]({:12.3f}) loaded: {} sequences",
+               timer.Lap(), dst.size());
+  }
+
+  fmt::print(stderr,
+             "\r[sniff::LoadSequences]({:12.3f}) loaded: {} sequences\n",
              timer.Stop(), dst.size());
 
   return dst;

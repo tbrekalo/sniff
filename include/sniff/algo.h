@@ -1,30 +1,11 @@
 #pragma once
 
-#include <memory>
-#include <string>
-#include <utility>
-#include <vector>
-
-#include "sniff/map_config.h"
-#include "sniff/minimize_config.h"
-
-namespace biosoup {
-class NucleicAcid;
-}
+#include "sniff/config.h"
+#include "sniff/sketch.h"
 
 namespace sniff {
 
-struct AlgoConfig {
-  double p;
-  std::uint32_t length;
-  std::uint32_t n_neighbors;
-
-  MapConfig map_cfg;
-  MinimizeConfig minimize_cfg;
-};
-
-auto FindReverseComplementPairs(
-    AlgoConfig cfg, std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
+auto FindReverseComplementPairs(Config cfg, std::vector<Sketch> sketches)
     -> std::vector<std::pair<std::string, std::string>>;
 
 }  // namespace sniff

@@ -30,10 +30,7 @@ int main(int argc, char** argv) {
        cxxopts::value<double>()->default_value("0.01"))
       ("l,query-length",
        "maximum sample length from beginning/end of  sequence",
-       cxxopts::value<std::uint32_t>()->default_value("5000"))
-      ("n,n-neighbors",
-       "maximum number of neighbors by length to take in consideration",
-       cxxopts::value<std::uint32_t>()->default_value("128"));
+       cxxopts::value<std::uint32_t>()->default_value("5000"));
     options.add_options("mapping")
       ("k,kmer-length", "kmer length used in mapping",
        cxxopts::value<std::uint32_t>()->default_value("15"))
@@ -75,23 +72,31 @@ int main(int argc, char** argv) {
     timer.Start();
 
     task_arena.execute([&] {
-      auto pairs = sniff::FindReverseComplementPairs(
-          sniff::AlgoConfig{
-              .p = result["percent"].as<double>(),
-              .length = result["query-length"].as<std::uint32_t>(),
-              .n_neighbors = result["n-neighbors"].as<std::uint32_t>(),
+      auto const cfg = sniff::Config{
+          .p = result["percent"].as<double>(),
+          .sample_length = result["query-length"].as<std::uint32_t>(),
 
-              .map_cfg =
-                  sniff::MapConfig{
-                      .min_chain_length = result["chain"].as<std::uint32_t>(),
-                      .max_chain_gap_length = result["gap"].as<std::uint32_t>(),
-                      .kmer_len = result["kmer-length"].as<std::uint32_t>()},
-              .minimize_cfg =
-                  sniff::MinimizeConfig{
-                      .kmer_len = result["kmer-length"].as<std::uint32_t>(),
-                      .window_len =
-                          result["window-length"].as<std::uint32_t>()}},
-          sniff::LoadReads(reads_path));
+          .map_cfg =
+              sniff::MapConfig{
+                  .min_chain_length = result["chain"].as<std::uint32_t>(),
+                  .max_chain_gap_length = result["gap"].as<std::uint32_t>(),
+                  .kmer_len = result["kmer-length"].as<std::uint32_t>()},
+          .minimize_cfg = sniff::MinimizeConfig{
+              .kmer_len = result["kmer-length"].as<std::uint32_t>(),
+              .window_len = result["window-length"].as<std::uint32_t>()}};
+
+      /* clang-format off */
+        fmt::print(stderr,
+          "[sniff::FindReverseComplementPairs]\n"
+          "\tp: {};\n"
+          "\tk: {}; w: {}; chain: {}; gap: {};\n",
+          cfg.p,
+          cfg.minimize_cfg.kmer_len, cfg.minimize_cfg.window_len,
+          cfg.map_cfg.min_chain_length, cfg.map_cfg.max_chain_gap_length);
+      /* clang-format on */
+
+      auto pairs = sniff::FindReverseComplementPairs(
+          cfg, sniff::LoadSketches(cfg, reads_path));
       for (auto const& [lhs, rhs] : pairs) {
         fmt::print("{},{}\n", lhs, rhs);
       }

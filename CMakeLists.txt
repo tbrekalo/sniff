@@ -47,12 +47,19 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/fmtlib/fmt
   GIT_TAG 9.1.0)
 
-FetchContent_MakeAvailable(bioparser biosoup cxxopts fmt)
+FetchContent_Declare(
+  unordered_dense
+  GIT_REPOSITORY https://github.com/martinus/unordered_dense
+  GIT_TAG v4.0.0
+)
+
+FetchContent_MakeAvailable(bioparser biosoup cxxopts fmt unordered_dense)
 
 find_package(TBB)
 add_library(
   sniff_lib
   src/algo.cc
+  src/config.cc
   src/io.cc
   src/kmer.cc
   src/map.cc
@@ -60,14 +67,15 @@ add_library(
   src/match.cc
   src/minimize.cc
   src/minimize_config.cc
-  src/overlap.cc)
+  src/overlap.cc
+  src/sketch.cc)
 target_include_directories(
   sniff_lib PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>
                    $<INSTALL_INTERFACE:include>)
 target_link_libraries(
   sniff_lib
   PUBLIC biosoup TBB::tbb
-  PRIVATE bioparser edlib fmt)
+  PRIVATE bioparser edlib fmt unordered_dense)
 
 add_executable(sniff src/main.cc)
 target_include_directories(sniff

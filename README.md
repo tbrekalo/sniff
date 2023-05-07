@@ -4,7 +4,7 @@ Heuristic tool for pairing up reverse complement reads in fasta/fastq files.
 
 ## Build dependencies
 
-- gcc 9.4 or higher
+- gcc 10.4 or higher
 - clang 10.1 or higher
 - intel tbb 2020.3
   - should be compatible with later oneapi versions
