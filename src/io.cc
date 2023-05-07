@@ -71,16 +71,15 @@ auto LoadSketches(Config cfg, std::filesystem::path const& path)
           reads[idx]->ReverseAndComplement();
           auto rc_sample = reads[idx]->InflateData(0, cfg.sample_length);
 
-          buff[idx] = Sketch{
-              .read_identifier{.read_id = reads[idx]->id,
-                               .read_name = reads[idx]->name},
+          buff[idx] =
+              Sketch{.read_identifier{.read_id = reads[idx]->id,
+                                      .read_name = reads[idx]->name},
 
-              .read_len = reads[idx]->inflated_len,
-              .minimizers = Minimize(cfg.minimize_cfg, reads[idx]->id, sample),
-              .rc_minimizers =
-                  Minimize(cfg.minimize_cfg, reads[idx]->id, rc_sample)
+                     .read_len = reads[idx]->inflated_len,
+                     .minimizers = Minimize(cfg.minimize_cfg, sample),
+                     .rc_minimizers = Minimize(cfg.minimize_cfg, rc_sample)
 
-          };
+              };
         });
 
     dst.insert(dst.end(), std::make_move_iterator(buff.begin()),

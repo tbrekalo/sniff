@@ -8,7 +8,7 @@
 
 namespace sniff {
 
-auto Minimize(MinimizeConfig cfg, std::uint32_t read_id,
-              std::string_view sequence) -> std::vector<KMer>;
+auto Minimize(MinimizeConfig cfg, std::string_view sequence)
+    -> std::vector<KMer>;
 
 }  // namespace sniff

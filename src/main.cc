@@ -39,7 +39,8 @@ int main(int argc, char** argv) {
       ("c,chain", "minimum chain length (in kmers)",
        cxxopts::value<std::uint32_t>()->default_value("4"))
       ("g,gap", "maximum gap between minimizers when chaining",
-       cxxopts::value<std::uint32_t>()->default_value("250"));
+       cxxopts::value<std::uint32_t>()->default_value("500"))
+      ("m,minhash", "minhash read sketch");
     options.add_options("input")
       ("input", "input fasta/fastq file", cxxopts::value<std::string>());
     /* clang-format on */
@@ -83,11 +84,12 @@ int main(int argc, char** argv) {
                   .kmer_len = result["kmer-length"].as<std::uint32_t>()},
           .minimize_cfg = sniff::MinimizeConfig{
               .kmer_len = result["kmer-length"].as<std::uint32_t>(),
-              .window_len = result["window-length"].as<std::uint32_t>()}};
+              .window_len = result["window-length"].as<std::uint32_t>(),
+              .minhash = result["minhash"].as<bool>()}};
 
       /* clang-format off */
         fmt::print(stderr,
-          "[sniff::FindReverseComplementPairs]\n"
+          "[sniff]\n"
           "\tp: {};\n"
           "\tk: {}; w: {}; chain: {}; gap: {};\n",
           cfg.p,

@@ -41,8 +41,8 @@ auto Hash(std::uint64_t val, std::uint64_t const kMask) -> std::uint64_t {
 
 namespace sniff {
 
-auto Minimize(MinimizeConfig cfg, std::uint32_t read_id,
-              std::string_view sequence) -> std::vector<KMer> {
+auto Minimize(MinimizeConfig cfg, std::string_view sequence)
+    -> std::vector<KMer> {
   auto dst = std::vector<KMer>();
 
   auto const mask =
@@ -80,6 +80,18 @@ auto Minimize(MinimizeConfig cfg, std::uint32_t read_id,
       window_push(Hash(kmer, mask),
                   KMer{.position = i - (cfg.kmer_len - 1), .value = kmer});
     }
+  }
+
+  if (cfg.minhash) {
+    std::sort(dst.begin(), dst.end(),
+              [](KMer const& lhs, KMer const& rhs) -> bool {
+                return lhs.value < rhs.value;
+              });
+    dst.resize(sequence.size() / cfg.kmer_len);
+    std::sort(dst.begin(), dst.end(),
+              [](KMer const& lhs, KMer const& rhs) -> bool {
+                return lhs.position < rhs.position;
+              });
   }
 
   return dst;

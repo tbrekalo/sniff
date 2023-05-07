@@ -5,7 +5,6 @@
 namespace sniff {
 
 struct KMer {
-  std::uint32_t read_id;
   std::uint32_t position;
   std::uint64_t value;
 

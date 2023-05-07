@@ -5,7 +5,7 @@
 
 namespace sniff {
 
-auto FindReverseComplementPairs(Config cfg, std::vector<Sketch> sketches)
+auto FindReverseComplementPairs(Config cfg, std::vector<Sketch> read_sketches)
     -> std::vector<std::pair<std::string, std::string>>;
 
 }  // namespace sniff
