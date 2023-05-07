@@ -15,22 +15,39 @@
 
 namespace sniff {
 
+struct ReadLenIndex {
+  std::uint32_t read_len;
+  std::uint32_t read_index;
+};
+
 static auto FindIndicesForLengthRelatedReads(
     std::vector<std::unique_ptr<biosoup::NucleicAcid>> const& reads,
-    std::uint32_t short_over_long_ratio_threshold) {
+    std::uint32_t short_over_long_ratio_threshold, std::uint32_t n_neighbors) {
   auto related = std::vector<std::vector<std::size_t>>(reads.size());
-  for (std::size_t i = 0; i < reads.size(); ++i) {
-    for (std::size_t j = i + 1; j < reads.size(); ++j) {
-      auto const len_short =
-          std::min(reads[i]->inflated_len, reads[j]->inflated_len);
-      auto const len_long =
-          std::max(reads[i]->inflated_len, reads[j]->inflated_len);
+  auto len_indices = std::vector<ReadLenIndex>(reads.size());
 
-      if (auto const ratio = static_cast<double>(len_short) / len_long;
-          ratio > short_over_long_ratio_threshold) {
-        related[i].push_back(j);
-        related[j].push_back(i);
+  for (std::uint32_t i = 0; i < reads.size(); ++i) {
+    len_indices[i] =
+        ReadLenIndex{.read_len = reads[i]->inflated_len, .read_index = i};
+  }
+
+  std::sort(len_indices.begin(), len_indices.end(),
+            [](ReadLenIndex const& lhs, ReadLenIndex const& rhs) -> bool {
+              return lhs.read_len < rhs.read_len;
+            });
+
+  for (std::size_t i = 0; i < len_indices.size(); ++i) {
+    for (std::size_t j = i + 1; j - i < n_neighbors && j < len_indices.size();
+         ++j) {
+      auto const [i_len, i_idx] = len_indices[i];
+      auto const [j_len, j_idx] = len_indices[j];
+
+      if (auto const len_ratio = static_cast<double>(j_len) / i_len;
+          len_ratio < short_over_long_ratio_threshold) {
+        break;
       }
+
+      related[i_idx].push_back(j_idx);
     }
   }
 
@@ -104,7 +121,12 @@ auto FindReverseComplementPairs(
   timer.Start();
 
   auto length_related_reads =
-      FindIndicesForLengthRelatedReads(reads, 1.0 - cfg.p);
+      FindIndicesForLengthRelatedReads(reads, 1.0 - cfg.p, cfg.n_neighbors);
+
+  fmt::print(
+      stderr,
+      "[sniff::FindReverseComplementPairs]({:12.3f}) grouped candidates\n",
+      timer.Stop());
 
   auto n_mapped = std::atomic_uint32_t(0);
   auto report_ticket = std::atomic_uint32_t(0);
@@ -123,6 +145,7 @@ auto FindReverseComplementPairs(
     }
   };
 
+  timer.Start();
   tbb::parallel_for(
       std::size_t(0), length_related_reads.size(),
       [cfg, &reads, &matches, &length_related_reads, &n_mapped,
@@ -155,7 +178,7 @@ auto FindReverseComplementPairs(
   std::sort(dst.begin(), dst.end());
   dst.erase(std::unique(dst.begin(), dst.end()), dst.end());
 
-  fmt::print(stderr, "[sniff::FindReverseComplementPairs]({:12.3f})\n",
+  fmt::print(stderr, "\r[sniff::FindReverseComplementPairs]({:12.3f})\n",
              timer.Stop());
 
   return dst;

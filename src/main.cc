@@ -28,9 +28,12 @@ int main(int argc, char** argv) {
       ("p,percent",
        "maximum allowed difference in length as % of shorter read's length",
        cxxopts::value<double>()->default_value("0.01"))
-      ("l,query-length", 
+      ("l,query-length",
        "maximum sample length from beginning/end of  sequence",
-       cxxopts::value<std::uint32_t>()->default_value("5000"));
+       cxxopts::value<std::uint32_t>()->default_value("5000"))
+      ("n,n-neighbors",
+       "maximum number of neighbors by length to take in consideration",
+       cxxopts::value<std::uint32_t>()->default_value("128"));
     options.add_options("mapping")
       ("k,kmer-length", "kmer length used in mapping",
        cxxopts::value<std::uint32_t>()->default_value("15"))
@@ -76,6 +79,8 @@ int main(int argc, char** argv) {
           sniff::AlgoConfig{
               .p = result["percent"].as<double>(),
               .length = result["query-length"].as<std::uint32_t>(),
+              .n_neighbors = result["n-neighbors"].as<std::uint32_t>(),
+
               .map_cfg =
                   sniff::MapConfig{
                       .min_chain_length = result["chain"].as<std::uint32_t>(),

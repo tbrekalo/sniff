@@ -17,6 +17,8 @@ namespace sniff {
 struct AlgoConfig {
   double p;
   std::uint32_t length;
+  std::uint32_t n_neighbors;
+
   MapConfig map_cfg;
   MinimizeConfig minimize_cfg;
 };
