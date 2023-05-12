@@ -15,7 +15,7 @@
 
 namespace sniff {
 
-static constexpr auto kChunkSize = 1U << 30U;  // 1 GiB
+static constexpr auto kChunkSize = 1U << 26U;  // 64 MiB
 
 static constexpr auto kFastaSuffxies =
     std::array<char const*, 4>{".fasta", "fasta.gz", ".fa", ".fa.gz"};
