@@ -62,9 +62,11 @@ auto Map(MapConfig cfg, std::span<Match const> src_matches)
             std::span(matches.cbegin() + j, matches.cbegin() + i));
 
         dst.push_back(
-            Overlap{.query_start = chain.front().query_pos,
+            Overlap{.query_id = chain.front().query_id,
+                    .query_start = chain.front().query_pos,
                     .query_end = chain.back().query_pos + cfg.kmer_len,
 
+                    .target_id = chain.front().target_id,
                     .target_start = chain.front().target_pos,
                     .target_end = chain.back().target_pos + cfg.kmer_len});
       }

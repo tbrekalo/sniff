@@ -47,3 +47,18 @@ TEST_CASE("overlap-error", "[overlap]") {
                                              .target_end = 5}) == 0.0);
   }
 }
+
+TEST_CASE("reverse-overlap", "[overlap]") {
+  CHECK(sniff::ReverseOverlap(sniff::Overlap{.query_id = 0,
+                                             .query_start = 0,
+                                             .query_end = 0,
+                                             .target_id = 1,
+                                             .target_start = 1,
+                                             .target_end = 1}) ==
+        sniff::Overlap{.query_id = 1,
+                       .query_start = 1,
+                       .query_end = 1,
+                       .target_id = 0,
+                       .target_start = 0,
+                       .target_end = 0});
+}

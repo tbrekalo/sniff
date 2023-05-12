@@ -4,6 +4,18 @@
 
 namespace sniff {
 
+auto ReverseOverlap(Overlap const& ovlp) -> Overlap {
+  return {
+      .query_id = ovlp.target_id,
+      .query_start = ovlp.target_start,
+      .query_end = ovlp.target_end,
+
+      .target_id = ovlp.query_id,
+      .target_start = ovlp.query_start,
+      .target_end = ovlp.query_end,
+  };
+}
+
 auto OverlapLength(Overlap const& ovlp) -> std::uint32_t {
   return std::max(ovlp.query_end - ovlp.query_start,
                   ovlp.target_end - ovlp.target_start);

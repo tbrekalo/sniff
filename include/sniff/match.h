@@ -1,5 +1,6 @@
 #pragma once
 
+#include <compare>
 #include <vector>
 
 #include "sniff/kmer.h"
@@ -7,16 +8,14 @@
 namespace sniff {
 
 struct Match {
+  std::uint32_t query_id;
   std::uint32_t query_pos;
+
+  std::uint32_t target_id;
   std::uint32_t target_pos;
 
-  friend constexpr auto operator==(Match const& lhs, Match const& rhs) -> bool {
-    return lhs.query_pos == rhs.query_pos && lhs.target_pos == rhs.target_pos;
-  }
-
-  friend constexpr auto operator!=(Match const& lhs, Match const& rhs) -> bool {
-    return !(lhs == rhs);
-  }
+  friend constexpr auto operator<=>(Match const& lhs,
+                                    Match const& rhs) = default;
 };
 
 auto MakeMatches(std::vector<KMer> query_sketch,
