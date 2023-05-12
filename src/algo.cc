@@ -1,6 +1,7 @@
 #include "sniff/algo.h"
 
 #include <optional>
+#include <variant>
 
 // 3rd party
 #include "ankerl/unordered_dense.h"
@@ -8,6 +9,7 @@
 #include "biosoup/timer.hpp"
 #include "fmt/core.h"
 #include "tbb/parallel_for.h"
+#include "tbb/parallel_sort.h"
 
 // sniff
 #include "sniff/map.h"
@@ -16,55 +18,237 @@
 
 namespace sniff {
 
-static constexpr auto kChunkSize = 1U << 28U;  // 256 MiB
+static constexpr auto kChunkSize = 1ULL << 32LLU;  // 4 GiB
 
-struct KMerInfo {
-  std::uint32_t read_id;
-  std::uint32_t read_len;
-  std::uint32_t in_read_position;
+template <class... Ts>
+struct overloaded : Ts... {
+  using Ts::operator()...;
 };
 
-auto FindReverseComplementPairs(Config cfg, std::vector<Sketch> read_sketches)
-    -> std::vector<std::pair<std::string, std::string>> {
-  auto matches = std::vector<std::optional<std::size_t>>(read_sketches.size());
-  auto dst = std::vector<std::pair<std::string, std::string>>();
-  auto timer = biosoup::Timer{};
-  timer.Start();
+template <class... Ts>
+overloaded(Ts...) -> overloaded<Ts...>;
 
-  auto index =
-      ankerl::unordered_dense::map<std::uint64_t, std::vector<KMerInfo>>();
-  auto batch_sz = 0;
-  for (std::size_t i = 0, j = i; j < read_sketches.size(); ++j) {
-    batch_sz += read_sketches[j].rc_minimizers.size() * sizeof(KMer);
-    if (batch_sz < kChunkSize && j + 1 < read_sketches.size()) {
+struct Target {
+  std::uint32_t read_id;
+  std::uint32_t read_len;
+
+  KMer kmer;
+};
+
+struct KMerLocator {
+  std::uint32_t count;
+  std::variant<Target, Target const*> value;
+};
+
+using KMerLocIndex = ankerl::unordered_dense::map<std::uint64_t, KMerLocator>;
+
+struct Index {
+  KMerLocIndex locations;
+  std::vector<Target> kmers;
+};
+
+static auto ExtractRcMinimizers(std::span<Sketch const> sketches)
+    -> std::vector<Target> {
+  auto dst = std::vector<Target>();
+  for (auto const& sketch : sketches) {
+    for (auto const& kmer : sketch.rc_minimizers) {
+      dst.push_back({.read_id = sketch.read_identifier.read_id,
+                     .read_len = sketch.read_len,
+                     .kmer = kmer});
+    }
+  }
+
+  tbb::parallel_sort(dst.begin(), dst.end(),
+                     [](Target const& lhs, Target const& rhs) -> bool {
+                       return lhs.kmer.value < rhs.kmer.value;
+                     });
+  return dst;
+}
+
+static auto IndexKMers(std::span<Target const> kmers) -> KMerLocIndex {
+  auto dst = KMerLocIndex();
+  for (std::uint32_t i = 0, j = i; i < kmers.size(); ++j) {
+    if (j < kmers.size() && kmers[i].kmer.value == kmers[j].kmer.value) {
       continue;
     }
 
-    for (std::uint32_t k = i; k < j + 1; ++k) {
-      for (auto const& kmer : read_sketches[k].rc_minimizers) {
-        index[kmer.value].push_back(
-            KMerInfo{.read_id = k,
-                     .read_len = read_sketches[k].read_len,
-                     .in_read_position = kmer.position});
-      }
+    auto& locator = dst[kmers[i].kmer.value];
+    locator.count = j - i;
+
+    if (locator.count == 1) {
+      locator.value = kmers[i];
+    } else {
+      locator.value = std::addressof(kmers[i]);
     }
 
-    tbb::parallel_for(std::size_t(i), j, [&index](std::size_t k) -> void {
+    i = j;
+  }
 
-    });
+  return dst;
+};
+
+static auto CreateKMerIndex(std::span<Sketch const> sketches) -> Index {
+  auto kmers = ExtractRcMinimizers(sketches);
+  auto index = IndexKMers(kmers);
+
+  return {.locations = std::move(index), .kmers = std::move(kmers)};
+}
+
+static auto MapMatches(Config const& cfg, std::vector<Match> matches)
+    -> std::optional<Overlap> {
+  auto read_intervals = std::vector<std::uint32_t>{0};
+  for (std::uint32_t i = 0; i < matches.size(); ++i) {
+    if (i + 1 == matches.size() ||
+        matches[i].target_id != matches[i + 1].target_id) {
+      read_intervals.push_back(i + 1);
+    }
+  }
+
+  auto dst_overlaps = std::vector<std::optional<Overlap>>(matches.size());
+  tbb::parallel_for(std::size_t(0), read_intervals.size() - 1,
+                    [&cfg, &matches, &read_intervals,
+                     &dst_overlaps](std::size_t read_idx) -> void {
+                      auto const n = read_intervals[read_idx + 1] -
+                                     read_intervals[read_idx];
+
+                      auto local_overlaps = Map(cfg.map_cfg, matches);
+                      if (local_overlaps.size() == 1) {
+                        dst_overlaps[read_idx] = local_overlaps.front();
+                      }
+                    });
+
+  auto max_len = 0;
+  auto dst = std::optional<Overlap>();
+  for (auto const& ovlp : dst_overlaps) {
+    if (ovlp && OverlapLength(*ovlp) > cfg.sample_length * .9 &&
+        OverlapLength(*ovlp) > max_len) {
+      max_len = OverlapLength(*ovlp);
+      dst = ovlp;
+    }
+  }
+
+  return dst;
+}
+
+static auto MapSketchToIndex(Config const& cfg, Sketch const& sketch,
+                             KMerLocIndex const& index)
+    -> std::optional<Overlap> {
+  auto const min_short_long_ratio = 1.0 - cfg.p;
+  auto read_matches = std::vector<Match>();
+  auto const try_match = [min_short_long_ratio, &query_sketch = sketch,
+                          &read_matches](KMer const& query_kmer,
+                                         Target const& target) -> void {
+    if (query_sketch.read_identifier.read_id >= target.read_id) {
+      return;
+    }
+
+    if (auto const len_ratio =
+            1. * std::min(query_sketch.read_len, target.read_len) /
+            std::max(query_sketch.read_len, target.read_len);
+        len_ratio < min_short_long_ratio) {
+      return;
+    }
+
+    read_matches.push_back(
+        Match{.query_id = query_sketch.read_identifier.read_id,
+              .query_pos = query_kmer.position,
+              .target_id = target.read_id,
+              .target_pos = target.kmer.position});
+  };
+
+  for (auto const& query_kmer : sketch.minimizers) {
+    auto const cl = index.find(query_kmer.value);
+    if (cl == index.end()) {
+      continue;
+    }
+
+    std::visit(
+        overloaded{[&try_match, &query_kmer](Target const& targe_kmer) -> void {
+                     try_match(query_kmer, targe_kmer);
+                   },
+                   [count = cl->second.count, &try_match,
+                    &query_kmer](Target const* target_kmers_ptr) -> void {
+                     for (std::size_t i = 0; i < count; ++i) {
+                       try_match(query_kmer, *(target_kmers_ptr + i));
+                     }
+                   }},
+        cl->second.value);
+  }
+
+  std::sort(read_matches.begin(), read_matches.end(),
+            [](Match const& lhs, Match const& rhs) -> bool {
+              return lhs.target_id < rhs.target_id;
+            });
+
+  return MapMatches(cfg, std::move(read_matches));
+}
+
+static auto MapSpanToIndex(Config const& cfg, std::span<Sketch const> sketches,
+                           KMerLocIndex const& index)
+    -> std::vector<std::optional<Overlap>> {
+  auto dst = std::vector<std::optional<Overlap>>(sketches.size());
+  tbb::parallel_for(std::size_t(0), sketches.size(),
+                    [&cfg, sketches, &index, &dst](std::size_t idx) {
+                      dst[idx] = MapSketchToIndex(cfg, sketches[idx], index);
+                    });
+  return dst;
+}
+
+auto FindReverseComplementPairs(Config cfg, std::vector<Sketch> sketches)
+    -> std::vector<std::pair<std::string, std::string>> {
+  auto overlaps = std::vector<std::optional<Overlap>>(sketches.size());
+  auto dst = std::vector<std::pair<std::string, std::string>>();
+
+  auto timer = biosoup::Timer{};
+  timer.Start();
+
+  auto batch_sz = 0ULL;
+  for (std::uint32_t i = 0, j = i; j < sketches.size(); ++j) {
+    batch_sz += sketches[j].rc_minimizers.size() * sizeof(KMer);
+    if (batch_sz < kChunkSize && j + 1 < sketches.size()) {
+      continue;
+    }
+
+    auto index =
+        CreateKMerIndex(std::span(sketches.begin() + i, sketches.begin() + j));
+    auto batch_overlaps = MapSpanToIndex(
+        cfg, std::span<Sketch const>(sketches.cbegin(), sketches.cbegin() + j),
+        index.locations);
+
+    for (std::uint32_t k = 0; k < j; ++k) {
+      if (!overlaps[k] ||
+          (batch_overlaps[k] &&
+           OverlapLength(*batch_overlaps[k]) > OverlapLength(*overlaps[k])))
+        overlaps[k] = batch_overlaps[k];
+    }
 
     i = j;
     batch_sz = 0;
-    index.clear();
 
     fmt::print(
         stderr,
         "\r[sniff::FindReverseComplementPairs]({:12.3f}) maped {:2.3f}% reads",
-        timer.Lap(), 100. * j / read_sketches.size());
+        timer.Lap(), 100. * j / sketches.size());
   }
 
-  fmt::print(stderr, "\r[sniff::FindReverseComplementPairs]({:12.3f})\n",
-             timer.Stop());
+  for (auto opt_ovlp : overlaps) {
+    if (opt_ovlp) {
+      if (opt_ovlp->query_id > opt_ovlp->target_id) {
+        opt_ovlp = ReverseOverlap(*opt_ovlp);
+      }
+
+      dst.emplace_back(sketches[opt_ovlp->query_id].read_identifier.read_name,
+                       sketches[opt_ovlp->target_id].read_identifier.read_name);
+    }
+  }
+
+  std::sort(dst.begin(), dst.end());
+  dst.erase(std::unique(dst.begin(), dst.end()), dst.end());
+
+  fmt::print(stderr,
+             "\r[sniff::FindReverseComplementPairs]({:12.3f}) found {} reverse "
+             "complements\n",
+             timer.Stop(), dst.size());
 
   return dst;
 }
