@@ -1,6 +1,6 @@
 #include "sniff/io.h"
 
-#include <iterator>
+#include <algorithm>
 
 // 3rd party
 #include "bioparser/fasta_parser.hpp"
@@ -89,6 +89,11 @@ auto LoadSketches(Config cfg, std::filesystem::path const& path)
                "\r[sniff::LoadSequences]({:12.3f}) loaded: {} sequences",
                timer.Lap(), dst.size());
   }
+
+  std::sort(dst.begin(), dst.end(),
+            [](Sketch const& lhs, Sketch const& rhs) -> bool {
+              return lhs.read_len < rhs.read_len;
+            });
 
   fmt::print(stderr,
              "\r[sniff::LoadSequences]({:12.3f}) loaded: {} sequences\n",
