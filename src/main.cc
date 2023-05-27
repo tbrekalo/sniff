@@ -1,3 +1,5 @@
+#include <sys/resource.h>
+
 #include <cstdlib>
 
 // 3rd party dependencies
@@ -13,6 +15,13 @@ std::atomic<std::uint32_t> biosoup::NucleicAcid::num_objects = 0;
 // sniff
 #include "sniff/algo.h"
 #include "sniff/io.h"
+
+static auto GetPeakMemoryUsageKB() -> std::uint32_t {
+  struct rusage rusage_info;
+  getrusage(RUSAGE_SELF, &rusage_info);
+
+  return rusage_info.ru_maxrss;
+}
 
 int main(int argc, char** argv) {
   try {
@@ -104,7 +113,8 @@ int main(int argc, char** argv) {
       }
     });
 
-    fmt::print(stderr, "[sniff::main]({:12.3f})\n", timer.Stop());
+    fmt::print(stderr, "[sniff::main]({:12.3f}) peak rss {:0.3f} GB\n", timer.Stop(),
+               static_cast<double>(GetPeakMemoryUsageKB()) / 1e6);
   } catch (std::exception const& e) {
     fmt::print(stderr, "{}\n", e.what());
   }
