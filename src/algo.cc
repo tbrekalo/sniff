@@ -18,7 +18,7 @@
 
 namespace sniff {
 
-static constexpr auto kChunkSize = 1ULL << 32LLU;  // 4 GiB
+static constexpr auto kChunkSize = 1ULL << 30LLU;  // 1 GiB
 
 template <class... Ts>
 struct overloaded : Ts... {
@@ -87,7 +87,8 @@ static auto IndexKMers(std::span<Target const> kmers) -> KMerLocIndex {
   return dst;
 };
 
-static auto CreateKMerIndex(std::span<Sketch const> sketches) -> Index {
+// Rc stands for "reverse complement"
+static auto CreateRcKMerIndex(std::span<Sketch const> sketches) -> Index {
   auto kmers = ExtractRcMinimizers(sketches);
   auto index = IndexKMers(kmers);
 
@@ -120,8 +121,7 @@ static auto MapMatches(Config const& cfg, std::vector<Match> matches)
   auto max_len = 0;
   auto dst = std::optional<Overlap>();
   for (auto const& ovlp : dst_overlaps) {
-    if (ovlp && OverlapLength(*ovlp) > cfg.sample_length * .9 &&
-        OverlapLength(*ovlp) > max_len) {
+    if (ovlp && OverlapLength(*ovlp) > max_len) {
       max_len = OverlapLength(*ovlp);
       dst = ovlp;
     }
@@ -209,26 +209,27 @@ auto FindReverseComplementPairs(Config cfg, std::vector<Sketch> sketches)
       continue;
     }
 
-    auto index =
-        CreateKMerIndex(std::span(sketches.begin() + i, sketches.begin() + j));
+    auto index = CreateRcKMerIndex(
+        std::span(sketches.begin() + i, sketches.begin() + j + 1));
     auto batch_overlaps = MapSpanToIndex(
-        cfg, std::span<Sketch const>(sketches.cbegin(), sketches.cbegin() + j),
+        cfg,
+        std::span<Sketch const>(sketches.cbegin(), sketches.cbegin() + j + 1),
         index.locations);
 
-    for (std::uint32_t k = 0; k < j; ++k) {
+    for (std::uint32_t k = 0; k <= j; ++k) {
       if (!overlaps[k] ||
           (batch_overlaps[k] &&
            OverlapLength(*batch_overlaps[k]) > OverlapLength(*overlaps[k])))
         overlaps[k] = batch_overlaps[k];
     }
 
-    i = j;
+    i = j + 1;
     batch_sz = 0;
 
     fmt::print(
         stderr,
         "\r[sniff::FindReverseComplementPairs]({:12.3f}) maped {:2.3f}% reads",
-        timer.Lap(), 100. * j / sketches.size());
+        timer.Lap(), 100. * (j + 1) / sketches.size());
   }
 
   for (auto opt_ovlp : overlaps) {
