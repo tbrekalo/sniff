@@ -92,7 +92,7 @@ auto LoadSketches(Config cfg, std::filesystem::path const& path)
 
   std::sort(dst.begin(), dst.end(),
             [](Sketch const& lhs, Sketch const& rhs) -> bool {
-              return lhs.read_len < rhs.read_len;
+              return lhs.read_identifier.read_id < rhs.read_identifier.read_id;
             });
 
   fmt::print(stderr,

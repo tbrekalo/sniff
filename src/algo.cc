@@ -47,7 +47,7 @@ struct Index {
   std::vector<Target> kmers;
 };
 
-static auto ExtractRcMinimizers(std::span<Sketch const> sketches)
+static auto ExtractRcMinimizersSortedByVal(std::span<Sketch const> sketches)
     -> std::vector<Target> {
   auto dst = std::vector<Target>();
   for (auto const& sketch : sketches) {
@@ -87,9 +87,30 @@ static auto IndexKMers(std::span<Target const> kmers) -> KMerLocIndex {
   return dst;
 };
 
+static auto GetFrequencyThreshold(KMerLocIndex const& index, double freq)
+    -> std::uint32_t {
+  if (index.size() <= 2) {
+    return 0U - 1;
+  }
+  auto counts = std::vector<std::uint32_t>();
+  counts.reserve(index.size());
+
+  for (auto it : index) {
+    counts.push_back(it.second.count);
+  }
+
+  std::nth_element(counts.begin(), counts.begin() + counts.size() * (1. - freq),
+                   counts.end());
+
+  auto idx = std::min(static_cast<std::size_t>(counts.size() * (1. - freq)) + 1,
+                      counts.size() - 1);
+
+  return counts[idx];
+}
+
 // Rc stands for "reverse complement"
 static auto CreateRcKMerIndex(std::span<Sketch const> sketches) -> Index {
-  auto kmers = ExtractRcMinimizers(sketches);
+  auto kmers = ExtractRcMinimizersSortedByVal(sketches);
   auto index = IndexKMers(kmers);
 
   return {.locations = std::move(index), .kmers = std::move(kmers)};
@@ -121,7 +142,14 @@ static auto MapMatches(Config const& cfg, std::vector<Match> matches)
   auto max_len = 0;
   auto dst = std::optional<Overlap>();
   for (auto const& ovlp : dst_overlaps) {
-    if (ovlp && OverlapLength(*ovlp) > max_len) {
+    if (ovlp &&
+        // query internal overlap
+        !((ovlp->query_start > 0.125 * cfg.sample_length &&
+           ovlp->query_end < 0.875 * cfg.sample_length) ||
+          // target internal overlap
+          (ovlp->target_start > 0.125 * cfg.sample_length &&
+           ovlp->target_end < 0.875 * cfg.sample_length)) &&
+        OverlapLength(*ovlp) > max_len) {
       max_len = OverlapLength(*ovlp);
       dst = ovlp;
     }
@@ -131,13 +159,13 @@ static auto MapMatches(Config const& cfg, std::vector<Match> matches)
 }
 
 static auto MapSketchToIndex(Config const& cfg, Sketch const& sketch,
-                             KMerLocIndex const& index)
+                             KMerLocIndex const& index, double threshold)
     -> std::optional<Overlap> {
   auto const min_short_long_ratio = 1.0 - cfg.p;
   auto read_matches = std::vector<Match>();
-  auto const try_match = [min_short_long_ratio, &query_sketch = sketch,
-                          &read_matches](KMer const& query_kmer,
-                                         Target const& target) -> void {
+  auto const try_match =
+      [min_short_long_ratio, &query_sketch = sketch, &read_matches, threshold](
+          KMer const& query_kmer, Target const& target) -> void {
     if (query_sketch.read_identifier.read_id >= target.read_id) {
       return;
     }
@@ -158,7 +186,7 @@ static auto MapSketchToIndex(Config const& cfg, Sketch const& sketch,
 
   for (auto const& query_kmer : sketch.minimizers) {
     auto const cl = index.find(query_kmer.value);
-    if (cl == index.end()) {
+    if (cl == index.end() || cl->second.count >= threshold) {
       continue;
     }
 
@@ -184,12 +212,13 @@ static auto MapSketchToIndex(Config const& cfg, Sketch const& sketch,
 }
 
 static auto MapSpanToIndex(Config const& cfg, std::span<Sketch const> sketches,
-                           KMerLocIndex const& index)
+                           KMerLocIndex const& index, double threshold)
     -> std::vector<std::optional<Overlap>> {
   auto dst = std::vector<std::optional<Overlap>>(sketches.size());
   tbb::parallel_for(std::size_t(0), sketches.size(),
-                    [&cfg, sketches, &index, &dst](std::size_t idx) {
-                      dst[idx] = MapSketchToIndex(cfg, sketches[idx], index);
+                    [&cfg, sketches, &index, threshold, &dst](std::size_t idx) {
+                      dst[idx] = MapSketchToIndex(cfg, sketches[idx], index,
+                                                  threshold);
                     });
   return dst;
 }
@@ -214,7 +243,7 @@ auto FindReverseComplementPairs(Config cfg, std::vector<Sketch> sketches)
     auto batch_overlaps = MapSpanToIndex(
         cfg,
         std::span<Sketch const>(sketches.cbegin(), sketches.cbegin() + j + 1),
-        index.locations);
+        index.locations, GetFrequencyThreshold(index.locations, 0.001));
 
     for (std::uint32_t k = 0; k <= j; ++k) {
       if (!overlaps[k] ||
@@ -240,6 +269,10 @@ auto FindReverseComplementPairs(Config cfg, std::vector<Sketch> sketches)
 
       dst.emplace_back(sketches[opt_ovlp->query_id].read_identifier.read_name,
                        sketches[opt_ovlp->target_id].read_identifier.read_name);
+
+      if (dst.back().first > dst.back().second) {
+        std::swap(dst.back().first, dst.back().second);
+      }
     }
   }
 
