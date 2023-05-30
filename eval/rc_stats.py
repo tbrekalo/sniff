@@ -26,7 +26,6 @@ class RunInfo(BaseModel):
 
 
 DF_COLS = [
-    'reads',
     'threads',
     'percent',
     'query_length',
@@ -130,17 +129,10 @@ def grid_serach(sniff_path: str, reads_path: str, gt_df: pl.DataFrame) -> pl.Dat
     runs = []
 
     sniff_args = DEFAULT_ARGS.copy()
-    for query_len in [1000, 2000, 5000]:
-        for use_minhash in [True, False]:
-            sniff_args.query_length = query_len
-            sniff_args.minhash = use_minhash
-
-            runs.append(
-                sniff_args.dict() |
-                run_sniff(
-                    sniff_path, gt_df, sniff_args, reads_path
-                ).dict()
-            )
+    runs.append(
+        sniff_args.dict() |
+        run_sniff(sniff_path, gt_df, sniff_args, reads_path).dict()
+    )
 
     return pl.DataFrame(runs)
 
