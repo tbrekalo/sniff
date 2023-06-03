@@ -7,6 +7,7 @@
 #include "ankerl/unordered_dense.h"
 #include "biosoup/nucleic_acid.hpp"
 #include "biosoup/timer.hpp"
+#include "edlib.h"
 #include "fmt/core.h"
 #include "tbb/parallel_for.h"
 #include "tbb/parallel_sort.h"
@@ -303,11 +304,66 @@ static auto MapSpanToIndex(
   return dst;
 }
 
+static auto MakeOverlapPairs(
+    std::span<std::unique_ptr<biosoup::NucleicAcid> const> reads,
+    std::span<std::optional<Overlap> const> opt_ovlps) -> std::vector<RcPair> {
+  auto dst = std::vector<RcPair>();
+  auto match_ids =
+      std::vector<std::pair<std::uint32_t, std::uint32_t>>(reads.size());
+  for (auto i = 0U; i < match_ids.size(); ++i) {
+    match_ids[i].first = i;
+  }
+
+  for (auto const& opt_ovlp : opt_ovlps) {
+    if (opt_ovlp) {
+      auto const ovlp_len = OverlapLength(*opt_ovlp);
+      if (match_ids[opt_ovlp->query_id].first == opt_ovlp->query_id ||
+          match_ids[opt_ovlp->query_id].second < ovlp_len) {
+        match_ids[opt_ovlp->query_id] = {opt_ovlp->target_id, ovlp_len};
+      }
+
+      if (match_ids[opt_ovlp->target_id].first == opt_ovlp->target_id ||
+          match_ids[opt_ovlp->target_id].second < ovlp_len) {
+        match_ids[opt_ovlp->target_id] = {opt_ovlp->query_id, ovlp_len};
+      }
+    }
+  }
+
+  for (auto lhs = 0U; lhs < match_ids.size(); ++lhs) {
+    auto rhs = match_ids[lhs].first;
+    if (lhs == rhs || match_ids[rhs].first != lhs || lhs > rhs) {
+      continue;
+    }
+
+    auto const lhs_str = reads[lhs]->InflateData();
+    auto const rhs_rc_str = CreateRcString(reads[rhs]);
+
+    auto edlib_res = edlibAlign(
+        lhs_str.c_str(), lhs_str.size(), rhs_rc_str.c_str(), rhs_rc_str.size(),
+        edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_PATH, nullptr, 0));
+
+    auto const edlib_ratio =
+        1. * edlib_res.editDistance /
+        std::max(reads[lhs]->inflated_len, reads[rhs]->inflated_len);
+
+    edlibFreeAlignResult(edlib_res);
+
+    dst.push_back(RcPair{.lhs = reads[lhs]->name,
+                         .rhs = reads[rhs]->name,
+                         .edit_dist_ratio = edlib_ratio});
+
+    if (dst.back().lhs > dst.back().rhs) {
+      std::swap(dst.back().lhs, dst.back().rhs);
+    }
+  }
+
+  return dst;
+}
+
 auto FindReverseComplementPairs(
     Config const& cfg, std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
-    -> std::vector<std::pair<std::string, std::string>> {
-  auto overlaps = std::vector<std::optional<Overlap>>(reads.size());
-  auto dst = std::vector<std::pair<std::string, std::string>>();
+    -> std::vector<RcPair> {
+  auto opt_ovlps = std::vector<std::optional<Overlap>>(reads.size());
 
   auto timer = biosoup::Timer{};
   timer.Start();
@@ -322,16 +378,14 @@ auto FindReverseComplementPairs(
     auto target_index = CreateRcKMerIndex(
         cfg, std::span(reads.cbegin() + i, reads.cbegin() + j + 1));
     auto query_reads = std::span(reads.cbegin(), reads.cbegin() + j + 1);
-
-    auto batch_overlaps =
+    auto batch_ovlps =
         MapSpanToIndex(cfg, query_reads, target_index.locations,
                        GetFrequencyThreshold(target_index.locations, 0.0002));
 
     for (std::uint32_t k = 0; k <= j; ++k) {
-      if (!overlaps[k] ||
-          (batch_overlaps[k] &&
-           OverlapLength(*batch_overlaps[k]) > OverlapLength(*overlaps[k])))
-        overlaps[k] = batch_overlaps[k];
+      if (!opt_ovlps[k] || (batch_ovlps[k] && OverlapLength(*batch_ovlps[k]) >
+                                                  OverlapLength(*opt_ovlps[k])))
+        opt_ovlps[k] = batch_ovlps[k];
     }
 
     i = j + 1;
@@ -343,20 +397,7 @@ auto FindReverseComplementPairs(
         timer.Lap(), 100. * (j + 1) / reads.size());
   }
 
-  for (auto opt_ovlp : overlaps) {
-    if (opt_ovlp) {
-      dst.emplace_back(reads[opt_ovlp->query_id]->name,
-                       reads[opt_ovlp->target_id]->name);
-
-      if (dst.back().first > dst.back().second) {
-        std::swap(dst.back().first, dst.back().second);
-      }
-    }
-  }
-
-  std::sort(dst.begin(), dst.end());
-  dst.erase(std::unique(dst.begin(), dst.end()), dst.end());
-
+  auto dst = MakeOverlapPairs(reads, opt_ovlps);
   fmt::print(stderr,
              "\r[sniff::FindReverseComplementPairs]({:12.3f}) found {} reverse "
              "complements\n",
