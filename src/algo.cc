@@ -19,7 +19,7 @@
 
 namespace sniff {
 
-static constexpr auto kChunkSize = 1ULL << 32LLU;  // 1 GiB
+static constexpr auto kChunkSize = 1ULL << 30LLU;  // 1 GiB
 
 template <class... Ts>
 struct overloaded : Ts... {
@@ -31,8 +31,6 @@ overloaded(Ts...) -> overloaded<Ts...>;
 
 struct Target {
   std::uint32_t read_id;
-  std::uint32_t read_len;
-
   KMer kmer;
 };
 
@@ -48,6 +46,7 @@ struct Index {
   std::vector<Target> kmers;
 };
 
+// RcMinimizers -> reverse complement minimizers
 static auto ExtractRcMinimizersSortedByVal(
     Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> reads)
@@ -56,7 +55,7 @@ static auto ExtractRcMinimizersSortedByVal(
   auto const minimize_cfg =
       MinimizeConfig{.kmer_len = cfg.minimize_cfg.kmer_len,
                      .window_len = cfg.minimize_cfg.window_len,
-                     .minhash = false};
+                     .minhash = true};
 
   auto cnt = std::atomic_size_t(0);
   auto sketches = std::vector<std::vector<Target>>(reads.size());
@@ -65,16 +64,16 @@ static auto ExtractRcMinimizersSortedByVal(
       [&reads, &minimize_cfg, &cnt, &sketches](std::size_t idx) -> void {
         auto rc_string = std::string(reads[idx]->InflateData());
         for (auto i = 0U; i < rc_string.size(); ++i) {
-          rc_string[rc_string.size() - 1 - i] =
-              biosoup::kNucleotideDecoder[3 ^ reads[idx]->Code(i)];
+          rc_string[i] =
+              biosoup::kNucleotideDecoder[3 ^ reads[idx]->Code(
+                                                  rc_string.size() - 1 - i)];
         }
 
         auto const rc_kmers = Minimize(minimize_cfg, rc_string);
         cnt += rc_kmers.size();
         for (auto const kmer : rc_kmers) {
-          sketches[idx].push_back(Target{.read_id = reads[idx]->id,
-                                         .read_len = reads[idx]->inflated_len,
-                                         .kmer = kmer});
+          sketches[idx].push_back(
+              Target{.read_id = reads[idx]->id, .kmer = kmer});
         }
       });
 
@@ -199,24 +198,26 @@ static auto MapSketchToIndex(
   auto const min_short_long_ratio = 1.0 - cfg.p;
   auto read_matches = std::vector<Match>();
   auto const try_match =
-      [min_short_long_ratio, &query_sketch = sketch, &read_matches, threshold](
-          KMer const& query_kmer, Target const& target) -> void {
-    if (query_sketch.read_identifier.read_id >= target.read_id) {
+      [query_reads, min_short_long_ratio, &query_sketch = sketch, &read_matches,
+       threshold](KMer const& query_kmer, Target const& target) -> void {
+    if (query_sketch.read_id >= target.read_id) {
       return;
     }
 
     if (auto const len_ratio =
-            1. * std::min(query_sketch.read_len, target.read_len) /
-            std::max(query_sketch.read_len, target.read_len);
+            1. *
+            std::min(query_reads[query_sketch.read_id]->inflated_len,
+                     query_reads[target.read_id]->inflated_len) /
+            std::max(query_reads[query_sketch.read_id]->inflated_len,
+                     query_reads[target.read_id]->inflated_len);
         len_ratio < min_short_long_ratio) {
       return;
     }
 
-    read_matches.push_back(
-        Match{.query_id = query_sketch.read_identifier.read_id,
-              .query_pos = query_kmer.position,
-              .target_id = target.read_id,
-              .target_pos = target.kmer.position});
+    read_matches.push_back(Match{.query_id = query_sketch.read_id,
+                                 .query_pos = query_kmer.position,
+                                 .target_id = target.read_id,
+                                 .target_pos = target.kmer.position});
   };
 
   for (auto const& query_kmer : sketch.minimizers) {
@@ -262,10 +263,7 @@ static auto MapSpanToIndex(
       [&cfg, query_reads, &target_index, threshold, &minimize_cfg,
        &dst](std::size_t idx) {
         auto sketch =
-            Sketch{.read_identifier =
-                       ReadIdentifier{.read_id = query_reads[idx]->id,
-                                      .read_name = query_reads[idx]->name},
-                   .read_len = query_reads[idx]->inflated_len,
+            Sketch{.read_id = query_reads[idx]->id,
                    .minimizers =
                        Minimize(minimize_cfg, query_reads[idx]->InflateData())};
 
