@@ -345,10 +345,6 @@ auto FindReverseComplementPairs(
 
   for (auto opt_ovlp : overlaps) {
     if (opt_ovlp) {
-      if (opt_ovlp->query_id > opt_ovlp->target_id) {
-        opt_ovlp = ReverseOverlap(*opt_ovlp);
-      }
-
       dst.emplace_back(reads[opt_ovlp->query_id]->name,
                        reads[opt_ovlp->target_id]->name);
 
