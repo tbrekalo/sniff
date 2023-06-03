@@ -3,6 +3,7 @@
 Heuristic tool for pairing up reverse complement reads in fasta/fastq files.
 
 ## Build dependencies
+
 - linux kernel 2.6.32 or higher
 - gcc 10.4 or higher
 - clang 10.1 or higher
@@ -31,10 +32,8 @@ Usage:
   -t, --threads arg  number of threads to use (default: 1)
 
  heuristic options:
-  -p, --percent arg       maximum allowed difference in length as % of 
-                          shorter read's length (default: 0.01)
-  -l, --query-length arg  maximum sample length from beginning/end of  
-                          sequence (default: 5000)
+  -p, --percent arg  maximum allowed difference in length as % of shorter
+                     read's length (default: 0.01)
 
  input options:
 
@@ -42,6 +41,6 @@ Usage:
   -k, --kmer-length arg    kmer length used in mapping (default: 15)
   -w, --window-length arg  window length used in mapping (default: 5)
   -c, --chain arg          minimum chain length (in kmers) (default: 4)
-  -g, --gap arg            maximum gap between minimizers when chaining 
+  -g, --gap arg            maximum gap between minimizers when chaining
                            (default: 500)
 ```

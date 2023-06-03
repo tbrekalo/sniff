@@ -36,10 +36,7 @@ int main(int argc, char** argv) {
     options.add_options("heuristic")
       ("p,percent",
        "maximum allowed difference in length as % of shorter read's length",
-       cxxopts::value<double>()->default_value("0.01"))
-      ("l,query-length",
-       "maximum sample length from beginning/end of  sequence",
-       cxxopts::value<std::uint32_t>()->default_value("5000"));
+       cxxopts::value<double>()->default_value("0.01"));
     options.add_options("mapping")
       ("k,kmer-length", "kmer length used in mapping",
        cxxopts::value<std::uint32_t>()->default_value("15"))
@@ -83,8 +80,6 @@ int main(int argc, char** argv) {
     task_arena.execute([&] {
       auto const cfg = sniff::Config{
           .p = result["percent"].as<double>(),
-          .sample_length = result["query-length"].as<std::uint32_t>(),
-
           .map_cfg =
               sniff::MapConfig{
                   .min_chain_length = result["chain"].as<std::uint32_t>(),
