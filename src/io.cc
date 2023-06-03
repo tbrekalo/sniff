@@ -49,41 +49,21 @@ static auto CreateParser(std::filesystem::path const& path)
       "[camel::detail::CreateParser] invalid file path: " + path.string());
 }
 
-auto LoadSketches(Config cfg, std::filesystem::path const& path)
-    -> std::vector<Sketch> {
+auto LoadReads(std::filesystem::path const& path)
+    -> std::vector<std::unique_ptr<biosoup::NucleicAcid>> {
   auto timer = biosoup::Timer();
 
   timer.Start();
   auto parser = CreateParser(path);
-  auto dst = std::vector<Sketch>();
+  auto dst = std::vector<std::unique_ptr<biosoup::NucleicAcid>>();
 
-  for (std::vector<Sketch> buff; true;) {
+  while (true) {
     auto reads = parser->Parse(kChunkSize);
     if (reads.empty()) {
       break;
     }
-
-    buff.resize(reads.size());
-    tbb::parallel_for(
-        std::size_t(0), reads.size(),
-        [&cfg, &reads, &buff](std::size_t idx) -> void {
-          auto sample = reads[idx]->InflateData(0, cfg.sample_length);
-          reads[idx]->ReverseAndComplement();
-          auto rc_sample = reads[idx]->InflateData(0, cfg.sample_length);
-
-          buff[idx] =
-              Sketch{.read_identifier{.read_id = reads[idx]->id,
-                                      .read_name = reads[idx]->name},
-
-                     .read_len = reads[idx]->inflated_len,
-                     .minimizers = Minimize(cfg.minimize_cfg, sample),
-                     .rc_minimizers = Minimize(cfg.minimize_cfg, rc_sample)
-
-              };
-        });
-
-    dst.insert(dst.end(), std::make_move_iterator(buff.begin()),
-               std::make_move_iterator(buff.end()));
+    dst.insert(dst.end(), std::make_move_iterator(reads.begin()),
+               std::make_move_iterator(reads.end()));
 
     fmt::print(stderr,
                "\r[sniff::LoadSequences]({:12.3f}) loaded: {} sequences",
@@ -91,8 +71,9 @@ auto LoadSketches(Config cfg, std::filesystem::path const& path)
   }
 
   std::sort(dst.begin(), dst.end(),
-            [](Sketch const& lhs, Sketch const& rhs) -> bool {
-              return lhs.read_identifier.read_id < rhs.read_identifier.read_id;
+            [](std::unique_ptr<biosoup::NucleicAcid> const& lhs,
+               std::unique_ptr<biosoup::NucleicAcid> const& rhs) -> bool {
+              return lhs->id < rhs->id;
             });
 
   fmt::print(stderr,

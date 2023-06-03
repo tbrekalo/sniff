@@ -15,10 +15,11 @@
 #include "sniff/map.h"
 #include "sniff/match.h"
 #include "sniff/minimize.h"
+#include "sniff/sketch.h"
 
 namespace sniff {
 
-static constexpr auto kChunkSize = 1ULL << 30LLU;  // 1 GiB
+static constexpr auto kChunkSize = 1ULL << 32LLU;  // 1 GiB
 
 template <class... Ts>
 struct overloaded : Ts... {
@@ -47,38 +48,65 @@ struct Index {
   std::vector<Target> kmers;
 };
 
-static auto ExtractRcMinimizersSortedByVal(std::span<Sketch const> sketches)
+static auto ExtractRcMinimizersSortedByVal(
+    Config const& cfg,
+    std::span<std::unique_ptr<biosoup::NucleicAcid> const> reads)
     -> std::vector<Target> {
   auto dst = std::vector<Target>();
-  for (auto const& sketch : sketches) {
-    for (auto const& kmer : sketch.rc_minimizers) {
-      dst.push_back({.read_id = sketch.read_identifier.read_id,
-                     .read_len = sketch.read_len,
-                     .kmer = kmer});
-    }
+  auto const minimize_cfg =
+      MinimizeConfig{.kmer_len = cfg.minimize_cfg.kmer_len,
+                     .window_len = cfg.minimize_cfg.window_len,
+                     .minhash = false};
+
+  auto cnt = std::atomic_size_t(0);
+  auto sketches = std::vector<std::vector<Target>>(reads.size());
+  tbb::parallel_for(
+      std::size_t(0), reads.size(),
+      [&reads, &minimize_cfg, &cnt, &sketches](std::size_t idx) -> void {
+        auto rc_string = std::string(reads[idx]->InflateData());
+        for (auto i = 0U; i < rc_string.size(); ++i) {
+          rc_string[rc_string.size() - 1 - i] =
+              biosoup::kNucleotideDecoder[3 ^ reads[idx]->Code(i)];
+        }
+
+        auto const rc_kmers = Minimize(minimize_cfg, rc_string);
+        cnt += rc_kmers.size();
+        for (auto const kmer : rc_kmers) {
+          sketches[idx].push_back(Target{.read_id = reads[idx]->id,
+                                         .read_len = reads[idx]->inflated_len,
+                                         .kmer = kmer});
+        }
+      });
+
+  dst.reserve(cnt);
+  for (auto& sketch : sketches) {
+    dst.insert(dst.end(), sketch.begin(), sketch.end());
+    std::vector<Target>{}.swap(sketch);
   }
 
-  tbb::parallel_sort(dst.begin(), dst.end(),
-                     [](Target const& lhs, Target const& rhs) -> bool {
-                       return lhs.kmer.value < rhs.kmer.value;
-                     });
+  std::sort(dst.begin(), dst.end(),
+            [](Target const& lhs, Target const& rhs) -> bool {
+              return lhs.kmer.value < rhs.kmer.value;
+            });
+
   return dst;
 }
 
-static auto IndexKMers(std::span<Target const> kmers) -> KMerLocIndex {
+static auto IndexKMers(std::span<Target const> target_kmers) -> KMerLocIndex {
   auto dst = KMerLocIndex();
-  for (std::uint32_t i = 0, j = i; i < kmers.size(); ++j) {
-    if (j < kmers.size() && kmers[i].kmer.value == kmers[j].kmer.value) {
+  for (std::uint32_t i = 0, j = i; i < target_kmers.size(); ++j) {
+    if (j < target_kmers.size() &&
+        target_kmers[i].kmer.value == target_kmers[j].kmer.value) {
       continue;
     }
 
-    auto& locator = dst[kmers[i].kmer.value];
+    auto& locator = dst[target_kmers[i].kmer.value];
     locator.count = j - i;
 
     if (locator.count == 1) {
-      locator.value = kmers[i];
+      locator.value = target_kmers[i];
     } else {
-      locator.value = std::addressof(kmers[i]);
+      locator.value = std::addressof(target_kmers[i]);
     }
 
     i = j;
@@ -99,41 +127,42 @@ static auto GetFrequencyThreshold(KMerLocIndex const& index, double freq)
     counts.push_back(it.second.count);
   }
 
-  std::nth_element(counts.begin(), counts.begin() + counts.size() * (1. - freq),
-                   counts.end());
-
-  auto idx = std::min(static_cast<std::size_t>(counts.size() * (1. - freq)) + 1,
-                      counts.size() - 1);
-
+  auto const idx = static_cast<std::size_t>(counts.size() * (1. - freq));
+  std::nth_element(counts.begin(), counts.begin() + idx, counts.end());
   return counts[idx];
 }
 
 // Rc stands for "reverse complement"
-static auto CreateRcKMerIndex(std::span<Sketch const> sketches) -> Index {
-  auto kmers = ExtractRcMinimizersSortedByVal(sketches);
-  auto index = IndexKMers(kmers);
+static auto CreateRcKMerIndex(
+    Config const& cfg,
+    std::span<std::unique_ptr<biosoup::NucleicAcid> const> target_reads)
+    -> Index {
+  auto target_kmers = ExtractRcMinimizersSortedByVal(cfg, target_reads);
+  auto index = IndexKMers(target_kmers);
 
-  return {.locations = std::move(index), .kmers = std::move(kmers)};
+  return {.locations = std::move(index), .kmers = std::move(target_kmers)};
 }
 
-static auto MapMatches(Config const& cfg, std::vector<Match> matches)
-    -> std::optional<Overlap> {
-  auto read_intervals = std::vector<std::uint32_t>{0};
+static auto MapMatches(
+    Config const& cfg,
+    std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
+    std::vector<Match> matches) -> std::optional<Overlap> {
+  auto target_intervals = std::vector<std::uint32_t>{0};
   for (std::uint32_t i = 0; i < matches.size(); ++i) {
     if (i + 1 == matches.size() ||
         matches[i].target_id != matches[i + 1].target_id) {
-      read_intervals.push_back(i + 1);
+      target_intervals.push_back(i + 1);
     }
   }
 
   auto dst_overlaps = std::vector<std::optional<Overlap>>(matches.size());
-  tbb::parallel_for(std::size_t(0), read_intervals.size() - 1,
-                    [&cfg, &matches, &read_intervals,
+  tbb::parallel_for(std::size_t(0), target_intervals.size() - 1,
+                    [&cfg, &matches, &target_intervals,
                      &dst_overlaps](std::size_t read_idx) -> void {
-                      auto const n = read_intervals[read_idx + 1] -
-                                     read_intervals[read_idx];
-
-                      auto local_overlaps = Map(cfg.map_cfg, matches);
+                      auto local_matches = std::span(
+                          matches.begin() + target_intervals[read_idx],
+                          matches.begin() + target_intervals[read_idx + 1]);
+                      auto local_overlaps = Map(cfg.map_cfg, local_matches);
                       if (local_overlaps.size() == 1) {
                         dst_overlaps[read_idx] = local_overlaps.front();
                       }
@@ -144,11 +173,15 @@ static auto MapMatches(Config const& cfg, std::vector<Match> matches)
   for (auto const& ovlp : dst_overlaps) {
     if (ovlp &&
         // query internal overlap
-        !((ovlp->query_start > 0.125 * cfg.sample_length &&
-           ovlp->query_end < 0.875 * cfg.sample_length) ||
+        !((ovlp->query_start >
+               0.125 * query_reads[ovlp->query_id]->inflated_len &&
+           ovlp->query_end <
+               0.875 * query_reads[ovlp->query_id]->inflated_len) ||
           // target internal overlap
-          (ovlp->target_start > 0.125 * cfg.sample_length &&
-           ovlp->target_end < 0.875 * cfg.sample_length)) &&
+          (ovlp->target_start >
+               0.125 * query_reads[ovlp->target_id]->inflated_len &&
+           ovlp->target_end <
+               0.875 * query_reads[ovlp->target_id]->inflated_len)) &&
         OverlapLength(*ovlp) > max_len) {
       max_len = OverlapLength(*ovlp);
       dst = ovlp;
@@ -158,8 +191,10 @@ static auto MapMatches(Config const& cfg, std::vector<Match> matches)
   return dst;
 }
 
-static auto MapSketchToIndex(Config const& cfg, Sketch const& sketch,
-                             KMerLocIndex const& index, double threshold)
+static auto MapSketchToIndex(
+    Config const& cfg,
+    std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
+    Sketch const& sketch, KMerLocIndex const& index, double threshold)
     -> std::optional<Overlap> {
   auto const min_short_long_ratio = 1.0 - cfg.p;
   auto read_matches = std::vector<Match>();
@@ -208,42 +243,62 @@ static auto MapSketchToIndex(Config const& cfg, Sketch const& sketch,
               return lhs.target_id < rhs.target_id;
             });
 
-  return MapMatches(cfg, std::move(read_matches));
+  return MapMatches(cfg, query_reads, std::move(read_matches));
 }
 
-static auto MapSpanToIndex(Config const& cfg, std::span<Sketch const> sketches,
-                           KMerLocIndex const& index, double threshold)
+static auto MapSpanToIndex(
+    Config const& cfg,
+    std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
+    KMerLocIndex const& target_index, double threshold)
     -> std::vector<std::optional<Overlap>> {
-  auto dst = std::vector<std::optional<Overlap>>(sketches.size());
-  tbb::parallel_for(std::size_t(0), sketches.size(),
-                    [&cfg, sketches, &index, threshold, &dst](std::size_t idx) {
-                      dst[idx] = MapSketchToIndex(cfg, sketches[idx], index,
-                                                  threshold);
-                    });
+  auto const minimize_cfg =
+      MinimizeConfig{.kmer_len = cfg.minimize_cfg.kmer_len,
+                     .window_len = cfg.minimize_cfg.window_len,
+                     .minhash = false};
+
+  auto dst = std::vector<std::optional<Overlap>>(query_reads.size());
+  tbb::parallel_for(
+      std::size_t(0), query_reads.size(),
+      [&cfg, query_reads, &target_index, threshold, &minimize_cfg,
+       &dst](std::size_t idx) {
+        auto sketch =
+            Sketch{.read_identifier =
+                       ReadIdentifier{.read_id = query_reads[idx]->id,
+                                      .read_name = query_reads[idx]->name},
+                   .read_len = query_reads[idx]->inflated_len,
+                   .minimizers =
+                       Minimize(minimize_cfg, query_reads[idx]->InflateData())};
+
+        dst[idx] =
+            MapSketchToIndex(cfg, query_reads, sketch, target_index, threshold);
+      });
+
   return dst;
 }
 
-auto FindReverseComplementPairs(Config cfg, std::vector<Sketch> sketches)
+auto FindReverseComplementPairs(
+    Config const& cfg, std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
     -> std::vector<std::pair<std::string, std::string>> {
-  auto overlaps = std::vector<std::optional<Overlap>>(sketches.size());
+  auto overlaps = std::vector<std::optional<Overlap>>(reads.size());
   auto dst = std::vector<std::pair<std::string, std::string>>();
 
   auto timer = biosoup::Timer{};
   timer.Start();
 
   auto batch_sz = 0ULL;
-  for (std::uint32_t i = 0, j = i; j < sketches.size(); ++j) {
-    batch_sz += sketches[j].rc_minimizers.size() * sizeof(KMer);
-    if (batch_sz < kChunkSize && j + 1 < sketches.size()) {
+  for (std::uint32_t i = 0, j = i; j < reads.size(); ++j) {
+    batch_sz += reads[j]->inflated_len;
+    if (batch_sz < kChunkSize && j + 1 < reads.size()) {
       continue;
     }
 
-    auto index = CreateRcKMerIndex(
-        std::span(sketches.begin() + i, sketches.begin() + j + 1));
-    auto batch_overlaps = MapSpanToIndex(
-        cfg,
-        std::span<Sketch const>(sketches.cbegin(), sketches.cbegin() + j + 1),
-        index.locations, GetFrequencyThreshold(index.locations, 0.001));
+    auto target_index = CreateRcKMerIndex(
+        cfg, std::span(reads.cbegin() + i, reads.cbegin() + j + 1));
+    auto query_reads = std::span(reads.cbegin(), reads.cbegin() + j + 1);
+
+    auto batch_overlaps =
+        MapSpanToIndex(cfg, query_reads, target_index.locations,
+                       GetFrequencyThreshold(target_index.locations, 0.0002));
 
     for (std::uint32_t k = 0; k <= j; ++k) {
       if (!overlaps[k] ||
@@ -258,7 +313,7 @@ auto FindReverseComplementPairs(Config cfg, std::vector<Sketch> sketches)
     fmt::print(
         stderr,
         "\r[sniff::FindReverseComplementPairs]({:12.3f}) maped {:2.3f}% reads",
-        timer.Lap(), 100. * (j + 1) / sketches.size());
+        timer.Lap(), 100. * (j + 1) / reads.size());
   }
 
   for (auto opt_ovlp : overlaps) {
@@ -267,8 +322,8 @@ auto FindReverseComplementPairs(Config cfg, std::vector<Sketch> sketches)
         opt_ovlp = ReverseOverlap(*opt_ovlp);
       }
 
-      dst.emplace_back(sketches[opt_ovlp->query_id].read_identifier.read_name,
-                       sketches[opt_ovlp->target_id].read_identifier.read_name);
+      dst.emplace_back(reads[opt_ovlp->query_id]->name,
+                       reads[opt_ovlp->target_id]->name);
 
       if (dst.back().first > dst.back().second) {
         std::swap(dst.back().first, dst.back().second);

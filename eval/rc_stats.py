@@ -15,7 +15,6 @@ class SniffArgs(BaseModel):
     window_length: int
     chain: int
     gap: int
-    minhash: bool
 
 
 class RunInfo(BaseModel):
@@ -33,7 +32,6 @@ DF_COLS = [
     'window_length',
     'chain',
     'gap',
-    'minhash',
     'runtime_s',
     'peak_memory_gib',
     'recall',
@@ -48,7 +46,6 @@ DEFAULT_ARGS = SniffArgs(
     window_length=5,
     chain=4,
     gap=500,
-    minhash=False,
 )
 
 
@@ -59,8 +56,6 @@ def format_sniff_args(sniff_args: SniffArgs, reads_path: str) -> List[str]:
         if k != 'minhash'
     ]
 
-    if sniff_args.minhash:
-        dst.append('--minhash')
     dst.append(reads_path)
 
     return dst

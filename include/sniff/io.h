@@ -1,13 +1,18 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
+#include <vector>
 
 #include "sniff/config.h"
-#include "sniff/sketch.h"
+
+namespace biosoup {
+class NucleicAcid;
+}
 
 namespace sniff {
 
-auto LoadSketches(Config cfg, std::filesystem::path const& path)
-    -> std::vector<Sketch>;
+auto LoadReads(std::filesystem::path const& path)
+    -> std::vector<std::unique_ptr<biosoup::NucleicAcid>>;
 
 }

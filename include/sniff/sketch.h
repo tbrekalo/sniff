@@ -17,7 +17,6 @@ struct Sketch {
   std::uint32_t read_len;
 
   std::vector<KMer> minimizers;
-  std::vector<KMer> rc_minimizers;  // reverse complement
 };
 
 }  // namespace sniff

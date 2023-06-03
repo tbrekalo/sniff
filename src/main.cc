@@ -48,8 +48,7 @@ int main(int argc, char** argv) {
       ("c,chain", "minimum chain length (in kmers)",
        cxxopts::value<std::uint32_t>()->default_value("4"))
       ("g,gap", "maximum gap between minimizers when chaining",
-       cxxopts::value<std::uint32_t>()->default_value("500"))
-      ("m,minhash", "minhash read sketch");
+       cxxopts::value<std::uint32_t>()->default_value("500"));
     options.add_options("input")
       ("input", "input fasta/fastq file", cxxopts::value<std::string>());
     /* clang-format on */
@@ -93,8 +92,7 @@ int main(int argc, char** argv) {
                   .kmer_len = result["kmer-length"].as<std::uint32_t>()},
           .minimize_cfg = sniff::MinimizeConfig{
               .kmer_len = result["kmer-length"].as<std::uint32_t>(),
-              .window_len = result["window-length"].as<std::uint32_t>(),
-              .minhash = result["minhash"].as<bool>()}};
+              .window_len = result["window-length"].as<std::uint32_t>()}};
 
       /* clang-format off */
         fmt::print(stderr,
@@ -106,15 +104,15 @@ int main(int argc, char** argv) {
           cfg.map_cfg.min_chain_length, cfg.map_cfg.max_chain_gap_length);
       /* clang-format on */
 
-      auto pairs = sniff::FindReverseComplementPairs(
-          cfg, sniff::LoadSketches(cfg, reads_path));
+      auto pairs =
+          sniff::FindReverseComplementPairs(cfg, sniff::LoadReads(reads_path));
       for (auto const& [lhs, rhs] : pairs) {
         fmt::print("{},{}\n", lhs, rhs);
       }
     });
 
-    fmt::print(stderr, "[sniff::main]({:12.3f}) peak rss {:0.3f} GB\n", timer.Stop(),
-               static_cast<double>(GetPeakMemoryUsageKB()) / 1e6);
+    fmt::print(stderr, "[sniff::main]({:12.3f}) peak rss {:0.3f} GB\n",
+               timer.Stop(), static_cast<double>(GetPeakMemoryUsageKB()) / 1e6);
   } catch (std::exception const& e) {
     fmt::print(stderr, "{}\n", e.what());
   }
