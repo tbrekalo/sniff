@@ -44,6 +44,4 @@ Usage:
   -c, --chain arg          minimum chain length (in kmers) (default: 4)
   -g, --gap arg            maximum gap between minimizers when chaining 
                            (default: 500)
-  -m, --minhash            minhash read sketch
-
 ```
