@@ -46,6 +46,16 @@ struct Index {
   std::vector<Target> kmers;
 };
 
+static auto CreateRcString(std::unique_ptr<biosoup::NucleicAcid> const& read)
+    -> std::string {
+  auto dst = std::string(read->InflateData());
+  for (auto i = 0U; i < dst.size(); ++i) {
+    dst[i] = biosoup::kNucleotideDecoder[3 ^ read->Code(dst.size() - 1 - i)];
+  }
+
+  return dst;
+}
+
 // RcMinimizers -> reverse complement minimizers
 static auto ExtractRcMinimizersSortedByVal(
     Config const& cfg,
@@ -62,14 +72,8 @@ static auto ExtractRcMinimizersSortedByVal(
   tbb::parallel_for(
       std::size_t(0), reads.size(),
       [&reads, &minimize_cfg, &cnt, &sketches](std::size_t idx) -> void {
-        auto rc_string = std::string(reads[idx]->InflateData());
-        for (auto i = 0U; i < rc_string.size(); ++i) {
-          rc_string[i] =
-              biosoup::kNucleotideDecoder[3 ^ reads[idx]->Code(
-                                                  rc_string.size() - 1 - i)];
-        }
-
-        auto const rc_kmers = Minimize(minimize_cfg, rc_string);
+        auto const rc_kmers =
+            Minimize(minimize_cfg, CreateRcString(reads[idx]));
         cnt += rc_kmers.size();
         for (auto const kmer : rc_kmers) {
           sketches[idx].push_back(
@@ -142,6 +146,34 @@ static auto CreateRcKMerIndex(
   return {.locations = std::move(index), .kmers = std::move(target_kmers)};
 }
 
+static auto IsSpanningOverlap(
+    Config const& cfg,
+    std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
+    Overlap src_ovlp) -> bool {
+  auto const minimize_cfg =
+      MinimizeConfig{.kmer_len = cfg.minimize_cfg.kmer_len,
+                     .window_len = cfg.minimize_cfg.window_len,
+                     .minhash = false};
+  auto matches = MakeMatches(
+      Minimize(minimize_cfg, query_reads[src_ovlp.query_id]->InflateData()),
+      Minimize(minimize_cfg, CreateRcString(query_reads[src_ovlp.target_id])));
+
+  auto ovlps = Map(cfg.map_cfg, matches);
+  if (ovlps.size() != 1) {
+    return false;
+  }
+
+  if (auto const& detail_ovlp = ovlps.front();
+      !(1. * (detail_ovlp.query_end - detail_ovlp.query_start) >
+            0.875 * query_reads[src_ovlp.query_id]->inflated_len &&
+        1. * (detail_ovlp.target_end - detail_ovlp.target_start) >
+            0.875 * query_reads[src_ovlp.target_id]->inflated_len)) {
+    return false;
+  }
+
+  return true;
+}
+
 static auto MapMatches(
     Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
@@ -155,33 +187,30 @@ static auto MapMatches(
   }
 
   auto dst_overlaps = std::vector<std::optional<Overlap>>(matches.size());
-  tbb::parallel_for(std::size_t(0), target_intervals.size() - 1,
-                    [&cfg, &matches, &target_intervals,
-                     &dst_overlaps](std::size_t read_idx) -> void {
-                      auto local_matches = std::span(
-                          matches.begin() + target_intervals[read_idx],
-                          matches.begin() + target_intervals[read_idx + 1]);
-                      auto local_overlaps = Map(cfg.map_cfg, local_matches);
-                      if (local_overlaps.size() == 1) {
-                        dst_overlaps[read_idx] = local_overlaps.front();
-                      }
-                    });
+  tbb::parallel_for(
+      std::size_t(0), target_intervals.size() - 1,
+      [&cfg, query_reads, &matches, &target_intervals,
+       &dst_overlaps](std::size_t read_idx) -> void {
+        auto local_matches =
+            std::span(matches.begin() + target_intervals[read_idx],
+                      matches.begin() + target_intervals[read_idx + 1]);
+        auto local_overlaps = Map(cfg.map_cfg, local_matches);
+        local_overlaps.erase(
+            std::remove_if(local_overlaps.begin(), local_overlaps.end(),
+                           [cfg, query_reads](Overlap const& ovlp) -> bool {
+                             return !IsSpanningOverlap(cfg, query_reads, ovlp);
+                           }),
+            local_overlaps.end());
+
+        if (!local_overlaps.empty()) {
+          dst_overlaps[read_idx] = local_overlaps.front();
+        }
+      });
 
   auto max_len = 0;
   auto dst = std::optional<Overlap>();
   for (auto const& ovlp : dst_overlaps) {
-    if (ovlp &&
-        // query internal overlap
-        !((ovlp->query_start >
-               0.125 * query_reads[ovlp->query_id]->inflated_len &&
-           ovlp->query_end <
-               0.875 * query_reads[ovlp->query_id]->inflated_len) ||
-          // target internal overlap
-          (ovlp->target_start >
-               0.125 * query_reads[ovlp->target_id]->inflated_len &&
-           ovlp->target_end <
-               0.875 * query_reads[ovlp->target_id]->inflated_len)) &&
-        OverlapLength(*ovlp) > max_len) {
+    if (ovlp && OverlapLength(*ovlp) > max_len) {
       max_len = OverlapLength(*ovlp);
       dst = ovlp;
     }
