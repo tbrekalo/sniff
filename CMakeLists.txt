@@ -28,20 +28,6 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/jarro2783/cxxopts
   GIT_TAG v3.1.1)
 
-find_package(edlib 1.2.7 QUIET)
-if(NOT edlib_FOUND)
-  FetchContent_Declare(
-    edlib
-    GIT_REPOSITORY https://github.com/martinsos/edlib
-    GIT_TAG v1.2.7)
-
-  FetchContent_GetProperties(edlib)
-  if(NOT edlib_POPULATED)
-    FetchContent_Populate(edlib)
-    add_subdirectory(${edlib_SOURCE_DIR} ${edlib_BINARY_DIR} EXCLUDE_FROM_ALL)
-  endif()
-endif()
-
 FetchContent_Declare(
   fmt
   GIT_REPOSITORY https://github.com/fmtlib/fmt
@@ -75,7 +61,7 @@ target_include_directories(
 target_link_libraries(
   sniff_lib
   PUBLIC biosoup TBB::tbb
-  PRIVATE bioparser edlib fmt unordered_dense)
+  PRIVATE bioparser fmt unordered_dense)
 
 add_executable(sniff src/main.cc)
 target_include_directories(sniff

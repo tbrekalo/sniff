@@ -101,8 +101,8 @@ int main(int argc, char** argv) {
 
       auto pairs =
           sniff::FindReverseComplementPairs(cfg, sniff::LoadReads(reads_path));
-      for (auto const& [lhs, rhs, ratio] : pairs) {
-        fmt::print("{},{},{}\n", lhs, rhs, ratio);
+      for (auto const& [lhs, rhs] : pairs) {
+        fmt::print("{},{}\n", lhs, rhs);
       }
     });
 

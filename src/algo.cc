@@ -7,7 +7,6 @@
 #include "ankerl/unordered_dense.h"
 #include "biosoup/nucleic_acid.hpp"
 #include "biosoup/timer.hpp"
-#include "edlib.h"
 #include "fmt/core.h"
 #include "tbb/parallel_for.h"
 #include "tbb/parallel_sort.h"
@@ -338,20 +337,7 @@ static auto MakeOverlapPairs(
     auto const lhs_str = reads[lhs]->InflateData();
     auto const rhs_rc_str = CreateRcString(reads[rhs]);
 
-    auto edlib_res = edlibAlign(
-        lhs_str.c_str(), lhs_str.size(), rhs_rc_str.c_str(), rhs_rc_str.size(),
-        edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_PATH, nullptr, 0));
-
-    auto const edlib_ratio =
-        1. * edlib_res.editDistance /
-        std::max(reads[lhs]->inflated_len, reads[rhs]->inflated_len);
-
-    edlibFreeAlignResult(edlib_res);
-
-    dst.push_back(RcPair{.lhs = reads[lhs]->name,
-                         .rhs = reads[rhs]->name,
-                         .edit_dist_ratio = edlib_ratio});
-
+    dst.push_back(RcPair{.lhs = reads[lhs]->name, .rhs = reads[rhs]->name});
     if (dst.back().lhs > dst.back().rhs) {
       std::swap(dst.back().lhs, dst.back().rhs);
     }

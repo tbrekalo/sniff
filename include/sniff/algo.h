@@ -15,7 +15,6 @@ namespace sniff {
 struct RcPair {
   std::string lhs;
   std::string rhs;
-  double edit_dist_ratio;
 };
 
 auto FindReverseComplementPairs(
