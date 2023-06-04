@@ -35,17 +35,17 @@ int main(int argc, char** argv) {
         cxxopts::value<std::uint32_t>()->default_value("1"));
     options.add_options("heuristic")
       ("p,percent",
-       "maximum allowed difference in length as % of shorter read's length",
-       cxxopts::value<double>()->default_value("0.01"));
+        "maximum allowed difference in length as % of shorter read's length",
+        cxxopts::value<double>()->default_value("0.01"));
     options.add_options("mapping")
       ("k,kmer-length", "kmer length used in mapping",
-       cxxopts::value<std::uint32_t>()->default_value("15"))
+        cxxopts::value<std::uint32_t>()->default_value("15"))
       ("w,window-length", "window length used in mapping",
-       cxxopts::value<std::uint32_t>()->default_value("5"))
+        cxxopts::value<std::uint32_t>()->default_value("5"))
       ("c,chain", "minimum chain length (in kmers)",
-       cxxopts::value<std::uint32_t>()->default_value("4"))
+        cxxopts::value<std::uint32_t>()->default_value("4"))
       ("g,gap", "maximum gap between minimizers when chaining",
-       cxxopts::value<std::uint32_t>()->default_value("500"));
+        cxxopts::value<std::uint32_t>()->default_value("500"));
     options.add_options("input")
       ("input", "input fasta/fastq file", cxxopts::value<std::string>());
     /* clang-format on */
