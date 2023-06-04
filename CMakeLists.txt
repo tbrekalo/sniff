@@ -11,6 +11,10 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
 
+option(SNIFF_BUILD_ASAN "Build Debug and RelWithDebInfo with ASAN" ON)
+option(SNIFF_BUILD_TOOLS "Build development tools" ${PROJECT_IS_TOP_LEVEL})
+option(SNIFF_BUILD_TESTS "Build sniff unit tests" ${PROJECT_IS_TOP_LEVEL})
+
 include(FetchContent)
 
 FetchContent_Declare(
@@ -36,8 +40,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   unordered_dense
   GIT_REPOSITORY https://github.com/martinus/unordered_dense
-  GIT_TAG v4.0.0
-)
+  GIT_TAG v4.0.0)
 
 FetchContent_MakeAvailable(bioparser biosoup cxxopts fmt unordered_dense)
 
@@ -67,11 +70,13 @@ add_executable(sniff src/main.cc)
 target_include_directories(sniff
                            PRIVATE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>)
 target_link_libraries(sniff PRIVATE cxxopts fmt sniff_lib)
-target_compile_options(
-  sniff PRIVATE $<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address>
-                $<$<CONFIG:Debug,RelWithDebInfo>:-fno-omit-frame-pointer>)
-target_link_options(sniff PRIVATE
-                    $<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address>)
+
+if(SNIFF_BUILD_ASAN)
+  target_compile_options(
+    sniff PRIVATE $<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address>
+                  $<$<CONFIG:Debug,RelWithDebInfo>:-fno-omit-frame-pointer>)
+  target_link_options(sniff PRIVATE $<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address>)
+endif()
 
 set_target_properties(sniff PROPERTIES VERSION ${sniff_VERSION}
                                        SOVERSION ${sniff_VERSION_MAJOR})
@@ -80,6 +85,10 @@ configure_file(${PROJECT_SOURCE_DIR}/src/version.h.in
 target_include_directories(
   sniff PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/sniff>)
 
-if(${PROJECT_IS_TOP_LEVEL})
+if(SNIFF_BUILD_TESTS)
   include(${CMAKE_CURRENT_LIST_DIR}/test/SniffTest.cmake)
+endif()
+
+if(SNIFF_BUILD_TOOLS)
+  include(${CMAKE_CURRENT_LIST_DIR}/tools/SniffTools.cmake)
 endif()
