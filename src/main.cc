@@ -50,7 +50,9 @@ int main(int argc, char** argv) {
       ("input", "input fasta/fastq file", cxxopts::value<std::string>());
     /* clang-format on */
 
+    options.positional_help("<reads>");
     options.parse_positional({"input"});
+    options.show_positional_help();
     auto result = options.parse(argc, argv);
 
     auto early_quit = false;
