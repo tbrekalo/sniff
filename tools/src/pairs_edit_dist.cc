@@ -75,13 +75,14 @@ static auto CreateRcString(std::unique_ptr<biosoup::NucleicAcid> const& read)
   return dst;
 }
 
-static auto CalculateDistances(ReadMap& reads, std::span<ReadPair> pairs)
+static auto CreatePairsWithEditRatio(ReadMap const& reads,
+                                     std::span<ReadPair const> pairs)
     -> std::vector<ReadPairEditRatio> {
   auto dst = std::vector<ReadPairEditRatio>(pairs.size());
-  tbb::parallel_for(pairs, [&](std::size_t idx) -> void {
+  tbb::parallel_for(std::size_t(0), pairs.size(), [&](std::size_t idx) -> void {
     auto const [lhs_name, rhs_name] = pairs[idx];
-    auto lhs_str = reads[lhs_name]->InflateData();
-    auto rhs_str = CreateRcString(reads[rhs_name]);
+    auto lhs_str = reads.at(lhs_name)->InflateData();
+    auto rhs_str = CreateRcString(reads.at(rhs_name));
 
     auto edlib_res = edlibAlign(
         lhs_str.c_str(), lhs_str.size(), rhs_str.c_str(), rhs_str.size(),
@@ -135,11 +136,16 @@ int main(int argc, char** argv) {
 
     auto ta = tbb::task_arena(result["threads"].as<std::uint32_t>());
     ta.execute([&]() -> void {
-      auto reads = LoadReads(reads_path);
+      auto const reads = LoadReads(reads_path);
       auto const pairs = LoadPairs(pairs_path);
 
       fmt::print(stderr, "loaded {} reads and {} pairs\n", reads.size(),
                  pairs.size());
+
+      auto const pairs_with_ratio = CreatePairsWithEditRatio(reads, pairs);
+      for (auto [pair, ratio] : pairs_with_ratio) {
+        fmt::print("{},{},{}\n", pair.lhs, pair.rhs, ratio);
+      }
     });
 
   } catch (std::exception const& e) {
