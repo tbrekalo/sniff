@@ -2,7 +2,7 @@
 
 Heuristic tool for pairing up reverse complement reads in fasta/fastq files.
 
-## Build dependencies
+## Dependencies
 
 - linux kernel 2.6.32 or higher
 - gcc 10.4 or higher
@@ -19,7 +19,30 @@ Heuristic tool for pairing up reverse complement reads in fasta/fastq files.
 - Catch2
   - fetched via cmake if missing
 
+## Build
+
+After running running git clone:
+
+```bash
+git clone git@github.com:tbrekalo/sniff.git
+```
+
+Run the following:
+
+```bash
+cmake -S ./sniff -B ./sniff/build -DCMAKE_BUILD_TYPE=Release -G Ninja
+cmake --build build
+```
+
+You can ommit the `-G Ninja` option in case your host system doesn't support the `Ninja` build system.
+
 ## Usage
+
+After building:
+
+```bash
+'./sniff/build/bin/sniff --help'
+```
 
 ```bash
 pair up potential reverse complement reads
@@ -44,3 +67,19 @@ Usage:
   -g, --gap arg            maximum gap between minimizers when chaining
                            (default: 500)
 ```
+
+## Methods
+
+Sniff loads sequences in batches displaying progress along the way. Once all sequences have been loaded into memory they are again processed in batches. Each batch is used for construcing a target index from reverse complemented reads. Original reads are then mapped against the constructed index
+using a seed and chain approach with minor modifications. For each read we remember the strongest matching reverse complement read and output reverse complement pairs. Each read appears in at most one pair.
+
+### Index construction
+...
+
+### Mapping
+...
+
+### Pair filtering
+
+## Evaluation
+...
