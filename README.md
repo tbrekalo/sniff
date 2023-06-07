@@ -72,14 +72,3 @@ Usage:
 
 Sniff loads sequences in batches displaying progress along the way. Once all sequences have been loaded into memory they are again processed in batches. Each batch is used for construcing a target index from reverse complemented reads. Original reads are then mapped against the constructed index
 using a seed and chain approach with minor modifications. For each read we remember the strongest matching reverse complement read and output reverse complement pairs. Each read appears in at most one pair.
-
-### Index construction
-...
-
-### Mapping
-...
-
-### Pair filtering
-
-## Evaluation
-...
