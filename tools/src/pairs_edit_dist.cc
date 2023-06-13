@@ -6,9 +6,9 @@
 #include <string>
 
 #include "ankerl/unordered_dense.h"
+#include "bindings/cpp/WFAligner.hpp"
 #include "biosoup/nucleic_acid.hpp"
 #include "cxxopts.hpp"
-#include "edlib.h"
 #include "fmt/core.h"
 #include "sniff/io.h"
 #include "tbb/parallel_for.h"
@@ -80,18 +80,26 @@ static auto CreatePairsWithEditRatio(ReadMap const& reads,
     -> std::vector<ReadPairEditRatio> {
   auto dst = std::vector<ReadPairEditRatio>(pairs.size());
   tbb::parallel_for(std::size_t(0), pairs.size(), [&](std::size_t idx) -> void {
+    thread_local auto init = false;
+    thread_local wfa::WFAlignerGapLinear aligner(
+        -1, 1, 2, wfa::WFAligner::Score, wfa::WFAligner::MemoryUltralow);
+    if (!init) {
+      aligner.setHeuristicWFadaptive(10, 50, 10);
+      aligner.setHeuristicZDrop(100, 100);
+      aligner.setHeuristicBandedAdaptive(50, 50, 1);
+      init = true;
+    }
+
     auto const [lhs_name, rhs_name] = pairs[idx];
     auto lhs_str = reads.at(lhs_name)->InflateData();
     auto rhs_str = CreateRcString(reads.at(rhs_name));
 
-    auto edlib_res = edlibAlign(
-        lhs_str.c_str(), lhs_str.size(), rhs_str.c_str(), rhs_str.size(),
-        edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_PATH, nullptr, 0));
+    aligner.alignEnd2End(lhs_str, rhs_str);
 
-    dst[idx] =
-        ReadPairEditRatio{.pair = pairs[idx],
-                          .ratio = static_cast<double>(edlib_res.editDistance) /
-                                   std::max(lhs_str.size(), rhs_str.size())};
+    dst[idx] = ReadPairEditRatio{
+        .pair = pairs[idx],
+        .ratio = static_cast<double>(aligner.getAlignmentScore()) /
+                 std::max(lhs_str.size(), rhs_str.size())};
   });
 
   return dst;
