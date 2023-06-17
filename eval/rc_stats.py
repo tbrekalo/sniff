@@ -1,4 +1,5 @@
 import argparse
+import pathlib
 from time import perf_counter
 from typing import List, Tuple
 
@@ -10,7 +11,6 @@ from pydantic import BaseModel
 class SniffArgs(BaseModel):
     threads: int
     percent: float
-    query_length: int
     kmer_length: int
     window_length: int
     chain: int
@@ -20,14 +20,11 @@ class SniffArgs(BaseModel):
 class RunInfo(BaseModel):
     runtime_s: float
     peak_memory_gib: float
-    recall: float
-    precision: float
 
 
 DF_COLS = [
     'threads',
     'percent',
-    'query_length',
     'kmer_length',
     'window_length',
     'chain',
@@ -41,12 +38,105 @@ DF_COLS = [
 DEFAULT_ARGS = SniffArgs(
     threads=32,
     percent=0.01,
-    query_length=5000,
     kmer_length=15,
     window_length=5,
     chain=4,
     gap=500,
 )
+
+PAF_COLUMNS = [
+    'query_name',
+    'query_length',
+    'query_start',
+    'query_end',
+    'strand',
+    'target_name',
+    'target_length',
+    'target_start',
+    'target_end',
+    'n_residue_matches',
+]
+
+PAIR_COLS = [
+    'query_name',
+    'target_name',
+]
+
+
+def load_pairs_df(pairs_csv: str) -> pl.DataFrame:
+    try:
+        return pl.read_csv(pairs_csv, has_header=False, new_columns=PAIR_COLS)
+    except Exception:
+        return pl.DataFrame(schema={'query_name': str, 'target_name': str})
+
+
+def load_paf_ref_mapping(ref_mapping: str, read_min_coverage: float = 0.875) -> pl.DataFrame:
+    return pl.read_csv(ref_mapping, separator='\t',
+                       has_header=False, columns=list(range(len(PAF_COLUMNS))),
+                       new_columns=PAF_COLUMNS).select([
+                           pl.col('^query_.*$'),
+                           pl.col('strand'),
+                           pl.col('target_start').alias('ref_start'),
+                           pl.col('target_end').alias('ref_end'),
+                       ]).groupby(
+        'query_name'
+    ).agg(
+        pl.all().sort_by(
+            pl.col('query_end')-pl.col('query_start') / pl.col('query_length')
+        ).last()
+    ).filter(
+        (pl.col('query_end') - pl.col('query_start')
+         ) > pl.col('query_length') * read_min_coverage
+    ).select(
+        pl.col('query_name').alias('seq_name'),
+        pl.col('query_length').alias('length'),
+        pl.col('query_start').alias('start'),
+        pl.col('query_end').alias('end'),
+        pl.col('strand'), pl.col('ref_start'), pl.col('ref_end')
+    )
+
+
+def expand_pairs_with_mapping(
+        pairs_df: pl.DataFrame,
+        mapping_df: pl.DataFrame) -> pl.DataFrame:
+    return pairs_df.join(
+        mapping_df.select(
+            pl.col('seq_name').alias('query_name'),
+            pl.col('length').alias('query_length'),
+            pl.col('strand').alias('query_strand'),
+            pl.col('ref_start').alias('query_ref_start'),
+            pl.col('ref_end').alias('query_ref_end')
+        ),
+        on='query_name', how='left',
+    ).join(
+        mapping_df.select(
+            pl.col('seq_name').alias('target_name'),
+            pl.col('length').alias('target_length'),
+            pl.col('strand').alias('target_strand'),
+            pl.col('ref_start').alias('target_ref_start'),
+            pl.col('ref_end').alias('target_ref_end')
+        ),
+        on='target_name', how='left',
+    ).with_columns(pl.when(
+        pl.col('query_strand').is_not_null() &
+        pl.col('target_strand').is_not_null()
+    ).then(
+        pl.max(
+            pl.min(pl.col('query_ref_end'), pl.col('target_ref_end')) -
+            pl.max(pl.col('query_ref_start'), pl.col('target_ref_start')),
+            0
+        ) / (
+            pl.max(pl.col('query_ref_end'), pl.col('target_ref_end')) -
+            pl.min(pl.col('query_ref_start'), pl.col('target_ref_end'))
+        )).otherwise(
+            0
+    ).alias('reference_overlap'),
+        pl.when(
+        pl.col('query_strand') == pl.col('target_strand')
+    ).then('+').otherwise(
+        '-'
+    ).alias('strand')
+    )
 
 
 def format_sniff_args(sniff_args: SniffArgs, reads_path: str) -> List[str]:
@@ -66,39 +156,13 @@ def create_sniff_spawn_list(
     return [sniff_path, *format_sniff_args(sniff_args, reads_path)]
 
 
-def calc_precision_recall(
-        gt_df: pl.DataFrame, paris_csv: str) -> Tuple[float, float]:
-
-    try:
-        predicted_df = pl.read_csv(
-            paris_csv,
-            has_header=False,
-            new_columns=['query_name', 'target_name']
-        )
-    except:
-        predicted_df = pl.DataFrame(
-            None, [('query_name', str), ('target_name', str)])
-
-    # true positives dataframe
-    tp_df = predicted_df.join(
-        gt_df,
-        on=['query_name', 'target_name']
-    )
-
-    return (
-        (tp_df.height / predicted_df.height
-         if not predicted_df.is_empty() else 0),
-        tp_df.height / gt_df.height
-    )
-
-
 def run_sniff(
         sniff_path: str,
-        gt_df: pl.DataFrame,
         sniff_args: SniffArgs,
-        reads_path: str) -> RunInfo:
-    pairs_csv_path = '/tmp/sniff-pairs.csv'
-    with open(pairs_csv_path, 'w+', encoding='UTF-8') as pairs_csv:
+        reads_path: str,
+        ref_mapping_df: pl.DataFrame) -> Tuple[pl.DataFrame, pl.DataFrame]:
+    PAIRS_CSV_PATH = '/tmp/sniff-pairs.csv'
+    with open(PAIRS_CSV_PATH, 'w+', encoding='UTF-8') as pairs_csv:
         with Popen(create_sniff_spawn_list(
                 sniff_path, sniff_args, reads_path), stdout=pairs_csv) as proc:
             peak_memory = 0
@@ -111,25 +175,15 @@ def run_sniff(
                 if curr_mem is not None and curr_mem > peak_memory:
                     peak_memory = curr_mem
 
-    precision, recall = calc_precision_recall(gt_df, pairs_csv_path)
-    return RunInfo(
-        runtime_s=int(time_end-time_start),
-        peak_memory_gib=peak_memory / (2 ** 30),
-        precision=precision,
-        recall=recall,
+    return (
+        pl.DataFrame(sniff_args.dict() | RunInfo(
+            runtime_s=int(time_end-time_start),
+            peak_memory_gib=peak_memory / (2 ** 30)).dict()),
+        expand_pairs_with_mapping(
+            pairs_df=load_pairs_df(PAIRS_CSV_PATH),
+            mapping_df=ref_mapping_df,
+        )
     )
-
-
-def grid_serach(sniff_path: str, reads_path: str, gt_df: pl.DataFrame) -> pl.DataFrame:
-    runs = []
-
-    sniff_args = DEFAULT_ARGS.copy()
-    runs.append(
-        sniff_args.dict() |
-        run_sniff(sniff_path, gt_df, sniff_args, reads_path).dict()
-    )
-
-    return pl.DataFrame(runs)
 
 
 if __name__ == "__main__":
@@ -139,7 +193,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '-g', '--ground-truth', type=str, required=True,
+        '-m', '--mapping', type=str, required=True,
         help='read reference mapping paf',
     )
 
@@ -154,26 +208,25 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '-o', '--out', type=str, default='sniff-eval.csv',
-        help='path to output csv',
+        '-o', '--out', type=str, default='eval-sniff',
+        help='path to output folder',
     )
 
     args = parser.parse_args()
-    ground_truth_df = pl.read_csv(
-        args.ground_truth
-    ).select(
-        pl.min(pl.col('query_name'), pl.col(
-            'target_name')).alias('query_name'),
-        pl.max(pl.col('query_name'), pl.col(
-            'target_name')).alias('target_name'),
-    ).filter(
-        pl.col('query_name') != pl.col('target_name')
-    )
-
-    res_df = grid_serach(
+    ref_mapping_df = load_paf_ref_mapping(ref_mapping=args.mapping)
+    run_df, mapped_pairs = run_sniff(
         sniff_path=args.sniff_path,
+        sniff_args=DEFAULT_ARGS,
         reads_path=args.reads_path,
-        gt_df=ground_truth_df,
+        ref_mapping_df=ref_mapping_df,
     )
 
-    res_df.write_csv(args.out)
+    out_dir = pathlib.Path(args.out)
+    if not out_dir.exists():
+        out_dir.mkdir()
+
+    out_run_info = out_dir.joinpath('run-info.csv')
+    out_pairs_info = out_dir.joinpath('pairs-mapped.csv')
+
+    run_df.write_csv(out_run_info)
+    mapped_pairs.write_csv(out_pairs_info)
