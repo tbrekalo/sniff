@@ -53,7 +53,6 @@ def format_sniff_args(sniff_args: SniffArgs, reads_path: str) -> List[str]:
     ]
 
     dst.append(reads_path)
-
     return dst
 
 
@@ -89,7 +88,7 @@ def run_sniff(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog='rc_stats',
-        description='calculate precision recall and accuracy for reverse complement pairs'
+        description='run sniff and record runtime information'
     )
 
     parser.add_argument(
