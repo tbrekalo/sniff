@@ -1,7 +1,9 @@
 import argparse
 import pathlib
+import subprocess
+import sys
 from time import perf_counter
-from typing import List
+from typing import List, Tuple
 
 import polars as pl
 from psutil import Popen
@@ -57,29 +59,33 @@ def format_sniff_args(sniff_args: SniffArgs, reads_path: str) -> List[str]:
 
 
 def create_sniff_spawn_list(
-        sniff_path: str, sniff_args: SniffArgs, reads_path: str) -> List[str]:
-    return [sniff_path, *format_sniff_args(sniff_args, reads_path)]
+        sniff_path: str | pathlib.Path,
+        sniff_args: SniffArgs,
+        reads_path: str | pathlib.Path) -> List[str]:
+    return [
+        str(sniff_path), *format_sniff_args(sniff_args, str(reads_path))
+    ]
 
 
 def run_sniff(
         sniff_path: str,
         sniff_args: SniffArgs,
-        reads_path: str,
-        pairs_out_path: str | pathlib.Path) -> pl.DataFrame:
-    with open(pairs_out_path, 'w+', encoding='UTF-8') as pairs_csv:
-        with Popen(create_sniff_spawn_list(
-                sniff_path, sniff_args, reads_path), stdout=pairs_csv) as proc:
-            peak_memory = 0
-            time_start = time_end = perf_counter()
+        reads_path: str | pathlib.Path) -> Tuple[bytes, pl.DataFrame]:
+    with Popen(create_sniff_spawn_list(sniff_path, sniff_args, reads_path),
+               stdout=subprocess.PIPE) as proc:
+        peak_memory = 0
+        time_start = time_end = perf_counter()
 
-            while proc.poll() is None:
-                curr_mem = proc.memory_info().rss
-                time_end = perf_counter()
+        while proc.poll() is None:
+            curr_mem = proc.memory_info().rss
+            time_end = perf_counter()
 
-                if curr_mem is not None and curr_mem > peak_memory:
-                    peak_memory = curr_mem
+            if curr_mem is not None and curr_mem > peak_memory:
+                peak_memory = curr_mem
 
-    return pl.DataFrame(sniff_args.dict() | RunInfo(
+        stdout_data, _ = proc.communicate()
+
+    return stdout_data, pl.DataFrame(sniff_args.dict() | RunInfo(
         runtime_s=int(time_end-time_start),
         peak_memory_gib=peak_memory / (2 ** 30)).dict()
     )
@@ -102,18 +108,21 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '-o', '--out', type=str, default='./eval-sniff',
-        help='path to output folder',
+        '-o', '--out', type=str, nargs='?', default=None,
+        help='file to output runtime info; otherwise prints to stderr',
     )
 
     args = parser.parse_args()
-    out_dir = pathlib.Path(args.out)
-    if not out_dir.exists():
-        out_dir.mkdir()
-
-    run_sniff(
+    rc_pairs_str, df_run_info = run_sniff(
         sniff_path=args.sniff_path,
         sniff_args=DEFAULT_ARGS,
         reads_path=args.reads_path,
-        pairs_out_path=out_dir.joinpath('rc-pairs.csv'),
-    ).write_csv(out_dir.joinpath('run-info.csv'))
+    )
+
+    if args.out is not None:
+        with open(args.out, 'w+', encoding='utf-8') as f:
+            print(df_run_info.write_csv(), file=f)
+    else:
+        print(df_run_info, file=sys.stderr)
+
+    print(rc_pairs_str.decode('utf-8'))
