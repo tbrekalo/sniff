@@ -2,3 +2,4 @@ autopep8
 isort
 mypy
 pylint
+pyright
