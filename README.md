@@ -14,7 +14,7 @@ After building:
 ```bash
 pair up potential reverse complement reads
 Usage:
-  sniff [OPTION...] positional parameters
+  sniff [OPTION...] <reads>
 
  general options:
   -h, --help         print help
@@ -22,17 +22,21 @@ Usage:
   -t, --threads arg  number of threads to use (default: 1)
 
  heuristic options:
-  -p, --percent arg  maximum allowed difference in length as % of shorter
-                     read's length (default: 0.01)
+  -a, --alpha-percent arg  maximum allowed difference in length as % of 
+                           shorter read's length (default: 0.01)
+  -b, --beta-percent arg   minimum required coverage on each read (default: 
+                           0.95)
 
  input options:
+      --input arg  input fasta/fastq file
 
  mapping options:
   -k, --kmer-length arg    kmer length used in mapping (default: 15)
   -w, --window-length arg  window length used in mapping (default: 5)
   -c, --chain arg          minimum chain length (in kmers) (default: 4)
-  -g, --gap arg            maximum gap between minimizers when chaining
+  -g, --gap arg            maximum gap between minimizers when chaining 
                            (default: 500)
+
 ```
 
 ## Dependencies

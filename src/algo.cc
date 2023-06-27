@@ -165,9 +165,9 @@ static auto IsSpanningOverlap(
 
   if (auto const& detail_ovlp = ovlps.front();
       !(1. * (detail_ovlp.query_end - detail_ovlp.query_start) >
-            0.875 * query_reads[src_ovlp.query_id]->inflated_len &&
+            cfg.beta_p * query_reads[src_ovlp.query_id]->inflated_len &&
         1. * (detail_ovlp.target_end - detail_ovlp.target_start) >
-            0.875 * query_reads[src_ovlp.target_id]->inflated_len)) {
+            cfg.beta_p * query_reads[src_ovlp.target_id]->inflated_len)) {
     return false;
   }
 
@@ -224,7 +224,7 @@ static auto MapSketchToIndex(
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
     Sketch const& sketch, KMerLocIndex const& index, double threshold)
     -> std::optional<Overlap> {
-  auto const min_short_long_ratio = 1.0 - cfg.p;
+  auto const min_short_long_ratio = 1.0 - cfg.alpha_p;
   auto read_matches = std::vector<Match>();
   auto const try_match =
       [query_reads, min_short_long_ratio, &query_sketch = sketch, &read_matches,
@@ -350,7 +350,6 @@ auto FindReverseComplementPairs(
     Config const& cfg, std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
     -> std::vector<RcPair> {
   auto opt_ovlps = std::vector<std::optional<Overlap>>(reads.size());
-
   auto timer = biosoup::Timer{};
   timer.Start();
 
