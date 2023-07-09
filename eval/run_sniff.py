@@ -39,8 +39,8 @@ DF_COLS = [
 
 DEFAULT_ARGS = SniffArgs(
     threads=32,
-    alpha_percent=0.01,
-    beta_percent=0.95,
+    alpha_percent=0.1,
+    beta_percent=0.98,
     kmer_length=15,
     window_length=5,
     chain=4,
