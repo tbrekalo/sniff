@@ -363,9 +363,9 @@ auto FindReverseComplementPairs(
     auto target_index = CreateRcKMerIndex(
         cfg, std::span(reads.cbegin() + i, reads.cbegin() + j + 1));
     auto query_reads = std::span(reads.cbegin(), reads.cbegin() + j + 1);
-    auto batch_ovlps =
-        MapSpanToIndex(cfg, query_reads, target_index.locations,
-                       GetFrequencyThreshold(target_index.locations, 0.0002));
+    auto batch_ovlps = MapSpanToIndex(
+        cfg, query_reads, target_index.locations,
+        GetFrequencyThreshold(target_index.locations, cfg.map_cfg.f));
 
     for (std::uint32_t k = 0; k <= j; ++k) {
       if (!opt_ovlps[k] || (batch_ovlps[k] && OverlapLength(*batch_ovlps[k]) >

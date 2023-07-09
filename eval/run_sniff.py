@@ -17,6 +17,7 @@ class SniffArgs(BaseModel):
     window_length: int
     chain: int
     gap: int
+    frequent: float
 
 
 class RunInfo(BaseModel):
@@ -26,11 +27,13 @@ class RunInfo(BaseModel):
 
 DF_COLS = [
     'threads',
-    'percent',
+    'alpha_percent',
+    'beta_percent',
     'kmer_length',
     'window_length',
     'chain',
     'gap',
+    'frequent',
     'runtime_s',
     'peak_memory_gib',
     'recall',
@@ -45,6 +48,7 @@ DEFAULT_ARGS = SniffArgs(
     window_length=5,
     chain=4,
     gap=500,
+    frequent=0.001,
 )
 
 

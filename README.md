@@ -22,10 +22,10 @@ Usage:
   -t, --threads arg  number of threads to use (default: 1)
 
  heuristic options:
-  -a, --alpha-percent arg  maximum allowed difference in length as % of 
-                           shorter read's length (default: 0.01)
-  -b, --beta-percent arg   minimum required coverage on each read (default: 
-                           0.95)
+  -a, --alpha-percent arg  maximum allowed difference in length as % of
+                           shorter read's length (default: 0.10)
+  -b, --beta-percent arg   minimum required coverage on each read (default:
+                           0.98)
 
  input options:
       --input arg  input fasta/fastq file
@@ -34,8 +34,9 @@ Usage:
   -k, --kmer-length arg    kmer length used in mapping (default: 15)
   -w, --window-length arg  window length used in mapping (default: 5)
   -c, --chain arg          minimum chain length (in kmers) (default: 4)
-  -g, --gap arg            maximum gap between minimizers when chaining 
+  -g, --gap arg            maximum gap between minimizers when chaining
                            (default: 500)
+  -f, --frequent arg       filter f most frequent kmers (default: 0.001)
 
 ```
 

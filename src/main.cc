@@ -36,10 +36,10 @@ int main(int argc, char** argv) {
     options.add_options("heuristic")
       ("a,alpha-percent",
         "maximum allowed difference in length as % of shorter read's length",
-        cxxopts::value<double>()->default_value("0.01"))
+        cxxopts::value<double>()->default_value("0.10"))
       ("b,beta-percent",
         "minimum required coverage on each read",
-        cxxopts::value<double>()->default_value("0.95"));
+        cxxopts::value<double>()->default_value("0.98"));
     options.add_options("mapping")
       ("k,kmer-length", "kmer length used in mapping",
         cxxopts::value<std::uint32_t>()->default_value("15"))
@@ -48,7 +48,9 @@ int main(int argc, char** argv) {
       ("c,chain", "minimum chain length (in kmers)",
         cxxopts::value<std::uint32_t>()->default_value("4"))
       ("g,gap", "maximum gap between minimizers when chaining",
-        cxxopts::value<std::uint32_t>()->default_value("500"));
+        cxxopts::value<std::uint32_t>()->default_value("500"))
+      ("f,frequent", "filter f most frequent kmers",
+        cxxopts::value<double>()->default_value("0.001"));
     options.add_options("input")
       ("input", "input fasta/fastq file", cxxopts::value<std::string>());
     /* clang-format on */
@@ -90,7 +92,8 @@ int main(int argc, char** argv) {
               sniff::MapConfig{
                   .min_chain_length = result["chain"].as<std::uint32_t>(),
                   .max_chain_gap_length = result["gap"].as<std::uint32_t>(),
-                  .kmer_len = result["kmer-length"].as<std::uint32_t>()},
+                  .kmer_len = result["kmer-length"].as<std::uint32_t>(),
+                  .f = result["frequent"].as<double>()},
           .minimize_cfg = sniff::MinimizeConfig{
               .kmer_len = result["kmer-length"].as<std::uint32_t>(),
               .window_len = result["window-length"].as<std::uint32_t>()}};
