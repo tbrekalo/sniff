@@ -34,9 +34,12 @@ int main(int argc, char** argv) {
       ("t,threads", "number of threads to use",
         cxxopts::value<std::uint32_t>()->default_value("1"));
     options.add_options("heuristic")
-      ("p,percent",
+      ("a,alpha-percent",
         "maximum allowed difference in length as % of shorter read's length",
-        cxxopts::value<double>()->default_value("0.01"));
+        cxxopts::value<double>()->default_value("0.01"))
+      ("b,beta-percent",
+        "minimum required coverage on each read",
+        cxxopts::value<double>()->default_value("0.95"));
     options.add_options("mapping")
       ("k,kmer-length", "kmer length used in mapping",
         cxxopts::value<std::uint32_t>()->default_value("15"))
@@ -81,7 +84,8 @@ int main(int argc, char** argv) {
 
     task_arena.execute([&] {
       auto const cfg = sniff::Config{
-          .p = result["percent"].as<double>(),
+          .alpha_p = result["alpha-percent"].as<double>(),
+          .beta_p = result["beta-percent"].as<double>(),
           .map_cfg =
               sniff::MapConfig{
                   .min_chain_length = result["chain"].as<std::uint32_t>(),
@@ -96,7 +100,7 @@ int main(int argc, char** argv) {
           "[sniff]\n"
           "\tp: {};\n"
           "\tk: {}; w: {}; chain: {}; gap: {};\n",
-          cfg.p,
+          cfg.alpha_p,
           cfg.minimize_cfg.kmer_len, cfg.minimize_cfg.window_len,
           cfg.map_cfg.min_chain_length, cfg.map_cfg.max_chain_gap_length);
       /* clang-format on */

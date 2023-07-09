@@ -11,7 +11,8 @@ from pydantic import BaseModel
 
 class SniffArgs(BaseModel):
     threads: int
-    percent: float
+    alpha_percent: float
+    beta_percent: float
     kmer_length: int
     window_length: int
     chain: int
@@ -22,8 +23,6 @@ class RunInfo(BaseModel):
     runtime_s: float
     peak_memory_gib: float
 
-
-SNIFF_TMP_PAIRS = '/tmp/sniff-pairs.csv'
 
 DF_COLS = [
     'threads',
@@ -40,7 +39,8 @@ DF_COLS = [
 
 DEFAULT_ARGS = SniffArgs(
     threads=32,
-    percent=0.01,
+    alpha_percent=0.1,
+    beta_percent=0.98,
     kmer_length=15,
     window_length=5,
     chain=4,
@@ -73,18 +73,18 @@ def run_sniff(
         sniff_args: SniffArgs,
         reads_path: str | pathlib.Path) -> pl.DataFrame:
 
-    with open(SNIFF_TMP_PAIRS, 'w+', encoding='utf-8') as pairs_dst:
-        with Popen(create_sniff_spawn_list(sniff_path, sniff_args, reads_path),
-                   stdout=pairs_dst) as proc:
-            peak_memory = 0
-            time_start = time_end = perf_counter()
+    with Popen(create_sniff_spawn_list(
+        sniff_path, sniff_args, reads_path)
+    ) as proc:
+        peak_memory = 0
+        time_start = time_end = perf_counter()
 
-            while proc.poll() is None:
-                curr_mem = proc.memory_info().rss
-                time_end = perf_counter()
+        while proc.poll() is None:
+            curr_mem = proc.memory_info().rss
+            time_end = perf_counter()
 
-                if curr_mem is not None and curr_mem > peak_memory:
-                    peak_memory = curr_mem
+            if curr_mem is not None and curr_mem > peak_memory:
+                peak_memory = curr_mem
 
     return pl.DataFrame(sniff_args.dict() | RunInfo(
         runtime_s=int(time_end-time_start),
@@ -125,6 +125,3 @@ if __name__ == "__main__":
             print(df_run_info.write_csv(), file=f)
     else:
         print(df_run_info, file=sys.stderr)
-
-    with open(SNIFF_TMP_PAIRS, 'r', encoding='utf-8') as rc_pairs:
-        print(rc_pairs.read())

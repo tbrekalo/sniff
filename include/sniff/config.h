@@ -6,7 +6,8 @@
 namespace sniff {
 
 struct Config {
-  double p;
+  double alpha_p;
+  double beta_p;
   MapConfig map_cfg;
   MinimizeConfig minimize_cfg;
 };
