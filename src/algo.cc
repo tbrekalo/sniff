@@ -48,7 +48,7 @@ struct Index {
 
 static auto CreateRcString(std::unique_ptr<biosoup::NucleicAcid> const& read)
     -> std::string {
-  auto dst = std::string(read->InflateData());
+  auto dst = std::string(read->inflated_len, '\0');
   for (auto i = 0U; i < dst.size(); ++i) {
     dst[i] = biosoup::kNucleotideDecoder[3 ^ read->Code(dst.size() - 1 - i)];
   }
