@@ -48,7 +48,7 @@ DEFAULT_ARGS = SniffArgs(
     window_length=5,
     chain=4,
     gap=500,
-    frequent=0.001,
+    frequent=0.0002,
 )
 
 

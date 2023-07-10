@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
       ("g,gap", "maximum gap between minimizers when chaining",
         cxxopts::value<std::uint32_t>()->default_value("500"))
       ("f,frequent", "filter f most frequent kmers",
-        cxxopts::value<double>()->default_value("0.001"));
+        cxxopts::value<double>()->default_value("0.0002"));
     options.add_options("input")
       ("input", "input fasta/fastq file", cxxopts::value<std::string>());
     /* clang-format on */
