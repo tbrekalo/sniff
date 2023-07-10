@@ -21,12 +21,15 @@ auto OverlapLength(Overlap const& ovlp) -> std::uint32_t {
                   ovlp.target_end - ovlp.target_start);
 }
 
-auto OverlapError(Overlap const& ovlp) -> double {
-  return 1.0 -
-         static_cast<double>(std::min(ovlp.query_end - ovlp.query_start,
+auto OverlapRatio(Overlap const& ovlp) -> double {
+  return static_cast<double>(std::min(ovlp.query_end - ovlp.query_start,
                                       ovlp.target_end - ovlp.target_start)) /
-             std::max(ovlp.query_end - ovlp.query_start,
-                      ovlp.target_end - ovlp.target_start);
+         std::max(ovlp.query_end - ovlp.query_start,
+                  ovlp.target_end - ovlp.target_start);
+}
+
+auto OverlapError(Overlap const& ovlp) -> double {
+  return 1.0 - OverlapRatio(ovlp);
 }
 
 }  // namespace sniff

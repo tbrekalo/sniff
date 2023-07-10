@@ -368,8 +368,8 @@ auto FindReverseComplementPairs(
         GetFrequencyThreshold(target_index.locations, cfg.map_cfg.f));
 
     for (std::uint32_t k = 0; k <= j; ++k) {
-      if (!opt_ovlps[k] || (batch_ovlps[k] && OverlapLength(*batch_ovlps[k]) >
-                                                  OverlapLength(*opt_ovlps[k])))
+      if (!opt_ovlps[k] || (batch_ovlps[k] && OverlapRatio(*batch_ovlps[k]) >
+                                                  OverlapRatio(*opt_ovlps[k])))
         opt_ovlps[k] = batch_ovlps[k];
     }
 
