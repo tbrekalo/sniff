@@ -1,5 +1,6 @@
 #include "sniff/algo.h"
 
+#include <functional>
 #include <optional>
 #include <variant>
 
@@ -54,6 +55,15 @@ static auto CreateRcString(std::unique_ptr<biosoup::NucleicAcid> const& read)
   }
 
   return dst;
+}
+
+static auto GetReadRefFromSpan(
+    std::span<std::unique_ptr<biosoup::NucleicAcid> const> reads,
+    std::uint32_t read_id) -> std::unique_ptr<biosoup::NucleicAcid> const& {
+  return *std::lower_bound(
+      reads.begin(), reads.end(), read_id,
+      [](std::unique_ptr<biosoup::NucleicAcid> const& seq,
+         std::uint32_t read_id) -> bool { return read_id; });
 }
 
 // RcMinimizers -> reverse complement minimizers
@@ -154,9 +164,13 @@ static auto IsSpanningOverlap(
       MinimizeConfig{.kmer_len = cfg.minimize_cfg.kmer_len,
                      .window_len = cfg.minimize_cfg.window_len,
                      .minhash = false};
+
+  using namespace std::placeholders;
+  auto const get_read = std::bind(GetReadRefFromSpan, query_reads, _1);
+
   auto matches = MakeMatches(
-      Minimize(minimize_cfg, query_reads[src_ovlp.query_id]->InflateData()),
-      Minimize(minimize_cfg, CreateRcString(query_reads[src_ovlp.target_id])));
+      Minimize(minimize_cfg, get_read(src_ovlp.query_id)->InflateData()),
+      Minimize(minimize_cfg, CreateRcString(get_read(src_ovlp.target_id))));
 
   auto ovlps = Map(cfg.map_cfg, matches);
   if (ovlps.size() != 1) {
@@ -165,9 +179,9 @@ static auto IsSpanningOverlap(
 
   if (auto const& detail_ovlp = ovlps.front();
       !(1. * (detail_ovlp.query_end - detail_ovlp.query_start) >
-            cfg.beta_p * query_reads[src_ovlp.query_id]->inflated_len &&
+            cfg.beta_p * get_read(src_ovlp.query_id)->inflated_len &&
         1. * (detail_ovlp.target_end - detail_ovlp.target_start) >
-            cfg.beta_p * query_reads[src_ovlp.target_id]->inflated_len)) {
+            cfg.beta_p * get_read(src_ovlp.target_id)->inflated_len)) {
     return false;
   }
 
@@ -226,8 +240,12 @@ static auto MapSketchToIndex(
     -> std::optional<Overlap> {
   auto const min_short_long_ratio = 1.0 - cfg.alpha_p;
   auto read_matches = std::vector<Match>();
+
+  using namespace std::placeholders;
+  auto const get_read = std::bind(GetReadRefFromSpan, query_reads, _1);
+
   auto const try_match =
-      [query_reads, min_short_long_ratio, &query_sketch = sketch, &read_matches,
+      [get_read, min_short_long_ratio, &query_sketch = sketch, &read_matches,
        threshold](KMer const& query_kmer, Target const& target) -> void {
     if (query_sketch.read_id >= target.read_id) {
       return;
@@ -235,10 +253,10 @@ static auto MapSketchToIndex(
 
     if (auto const len_ratio =
             1. *
-            std::min(query_reads[query_sketch.read_id]->inflated_len,
-                     query_reads[target.read_id]->inflated_len) /
-            std::max(query_reads[query_sketch.read_id]->inflated_len,
-                     query_reads[target.read_id]->inflated_len);
+            std::min(get_read(query_sketch.read_id)->inflated_len,
+                     get_read(target.read_id)->inflated_len) /
+            std::max(get_read(query_sketch.read_id)->inflated_len,
+                     get_read(target.read_id)->inflated_len);
         len_ratio < min_short_long_ratio) {
       return;
     }
@@ -284,7 +302,7 @@ static auto MapSpanToIndex(
   auto const minimize_cfg =
       MinimizeConfig{.kmer_len = cfg.minimize_cfg.kmer_len,
                      .window_len = cfg.minimize_cfg.window_len,
-                     .minhash = false};
+                     .minhash = true};
 
   auto dst = std::vector<std::optional<Overlap>>(query_reads.size());
   tbb::parallel_for(
@@ -346,9 +364,26 @@ static auto MakeOverlapPairs(
   return dst;
 }
 
+auto ReindexAndSortReads(
+    std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
+    -> std::vector<std::unique_ptr<biosoup::NucleicAcid>> {
+  std::sort(reads.begin(), reads.end(),
+            [](std::unique_ptr<biosoup::NucleicAcid> const& lhs,
+               std::unique_ptr<biosoup::NucleicAcid> const& rhs) -> bool {
+              return lhs->inflated_len < rhs->inflated_len;
+            });
+
+  for (auto idx = 0U; idx < reads.size(); ++idx) {
+    reads[idx]->id = idx;
+  }
+
+  return reads;
+};
+
 auto FindReverseComplementPairs(
     Config const& cfg, std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
     -> std::vector<RcPair> {
+  reads = ReindexAndSortReads(std::move(reads));
   auto opt_ovlps = std::vector<std::optional<Overlap>>(reads.size());
   auto timer = biosoup::Timer{};
   timer.Start();
@@ -362,15 +397,32 @@ auto FindReverseComplementPairs(
 
     auto target_index = CreateRcKMerIndex(
         cfg, std::span(reads.cbegin() + i, reads.cbegin() + j + 1));
-    auto query_reads = std::span(reads.cbegin(), reads.cbegin() + j + 1);
+
+    auto hi_iter = reads.cbegin() + j + 1;
+    auto lo_iter = std::upper_bound(
+        reads.cbegin(), reads.cbegin() + j + 1,
+        static_cast<std::uint32_t>(reads[i]->inflated_len *
+                                   (1.0 - cfg.alpha_p)),
+        [](std::uint32_t min_len,
+           std::unique_ptr<biosoup::NucleicAcid> const& read) -> bool {
+          return min_len < read->inflated_len;
+        });
+
+    if (lo_iter == hi_iter) {
+      lo_iter = reads.cbegin();
+    }
+
+    auto query_reads = std::span(lo_iter, hi_iter);
+
     auto batch_ovlps = MapSpanToIndex(
         cfg, query_reads, target_index.locations,
         GetFrequencyThreshold(target_index.locations, cfg.map_cfg.f));
 
-    for (std::uint32_t k = 0; k <= j; ++k) {
-      if (!opt_ovlps[k] || (batch_ovlps[k] && OverlapRatio(*batch_ovlps[k]) >
-                                                  OverlapRatio(*opt_ovlps[k])))
-        opt_ovlps[k] = batch_ovlps[k];
+    for (auto const& ovlp : batch_ovlps) {
+      if (ovlp &&
+          (!opt_ovlps[ovlp->query_id] ||
+           OverlapRatio(*ovlp) > OverlapRatio(*opt_ovlps[ovlp->query_id])))
+        opt_ovlps[ovlp->query_id] = ovlp;
     }
 
     i = j + 1;
@@ -378,7 +430,7 @@ auto FindReverseComplementPairs(
 
     fmt::print(
         stderr,
-        "\r[sniff::FindReverseComplementPairs]({:12.3f}) maped {:2.3f}% reads",
+        "\r[sniff::FindReverseComplementPairs]({:12.3f}) mapped {:2.3f}% reads",
         timer.Lap(), 100. * (j + 1) / reads.size());
   }
 
