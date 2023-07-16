@@ -1,5 +1,6 @@
 #include "sniff/minimize.h"
 
+#include <algorithm>
 #include <deque>
 
 /* clang-format off */
@@ -22,7 +23,7 @@ constexpr static std::uint8_t kNucleotideCoder[] = {
     255,   3, 255, 255, 255, 255, 255, 255
 };
 
-constexpr static char kNucleotideDecoder[] = {
+static constexpr char kNucleotideDecoder[] = {
     'A', 'C', 'G', 'T'
 };
 
@@ -37,6 +38,16 @@ auto Hash(std::uint64_t val, std::uint64_t const kMask) -> std::uint64_t {
   val = val ^ (val >> 28);
   val = (val + (val << 31)) & kMask;
   return val;
+}
+
+static auto CmpKMerByVal(sniff::KMer const& lhs,
+                         sniff::KMer const& rhs) noexcept -> bool {
+  return lhs.value < rhs.value;
+}
+
+static auto CmpKMerByPos(sniff::KMer const& lhs,
+                         sniff::KMer const& rhs) noexcept -> bool {
+  return lhs.position < rhs.position;
 }
 
 namespace sniff {
@@ -83,15 +94,9 @@ auto Minimize(MinimizeConfig cfg, std::string_view sequence)
   }
 
   if (cfg.minhash) {
-    std::sort(dst.begin(), dst.end(),
-              [](KMer const& lhs, KMer const& rhs) -> bool {
-                return lhs.value < rhs.value;
-              });
+    std::sort(dst.begin(), dst.end(), CmpKMerByVal);
     dst.resize(sequence.size() / cfg.kmer_len);
-    std::sort(dst.begin(), dst.end(),
-              [](KMer const& lhs, KMer const& rhs) -> bool {
-                return lhs.position < rhs.position;
-              });
+    std::sort(dst.begin(), dst.end(), CmpKMerByPos);
   }
 
   return dst;
