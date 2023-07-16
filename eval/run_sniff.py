@@ -11,12 +11,11 @@ from pydantic import BaseModel
 
 class SniffArgs(BaseModel):
     threads: int
-    alpha_percent: float
-    beta_percent: float
+    alpha: float
+    beta: float
     kmer_length: int
     window_length: int
-    chain: int
-    gap: int
+    index_size: int
     frequent: float
 
 
@@ -27,12 +26,11 @@ class RunInfo(BaseModel):
 
 DF_COLS = [
     'threads',
-    'alpha_percent',
-    'beta_percent',
+    'alpha',
+    'beta',
     'kmer_length',
     'window_length',
-    'chain',
-    'gap',
+    'index_size',
     'frequent',
     'runtime_s',
     'peak_memory_gib',
@@ -42,12 +40,11 @@ DF_COLS = [
 
 DEFAULT_ARGS = SniffArgs(
     threads=32,
-    alpha_percent=0.1,
-    beta_percent=0.98,
+    alpha=0.1,
+    beta=0.98,
     kmer_length=15,
     window_length=5,
-    chain=4,
-    gap=500,
+    index_size=26,
     frequent=0.0002,
 )
 

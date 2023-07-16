@@ -34,21 +34,18 @@ int main(int argc, char** argv) {
       ("t,threads", "number of threads to use",
         cxxopts::value<std::uint32_t>()->default_value("1"));
     options.add_options("heuristic")
-      ("a,alpha-percent",
-        "maximum allowed difference in length as % of shorter read's length",
+      ("a,alpha",
+       "shorter read length as percentage of longer read lenght in pair",
         cxxopts::value<double>()->default_value("0.10"))
-      ("b,beta-percent",
-        "minimum required coverage on each read",
+      ("b,beta", "minimum required coverage on each read",
         cxxopts::value<double>()->default_value("0.98"));
     options.add_options("mapping")
       ("k,kmer-length", "kmer length used in mapping",
         cxxopts::value<std::uint32_t>()->default_value("15"))
       ("w,window-length", "window length used in mapping",
         cxxopts::value<std::uint32_t>()->default_value("5"))
-      ("c,chain", "minimum chain length (in kmers)",
-        cxxopts::value<std::uint32_t>()->default_value("4"))
-      ("g,gap", "maximum gap between minimizers when chaining",
-        cxxopts::value<std::uint32_t>()->default_value("500"))
+      ("i,index-size", "kmer index size as power of 2",
+        cxxopts::value<std::uint32_t>()->default_value("30"))
       ("f,frequent", "filter f most frequent kmers",
         cxxopts::value<double>()->default_value("0.0002"));
     options.add_options("input")
@@ -86,26 +83,21 @@ int main(int argc, char** argv) {
 
     task_arena.execute([&] {
       auto const cfg = sniff::Config{
-          .alpha_p = result["alpha-percent"].as<double>(),
-          .beta_p = result["beta-percent"].as<double>(),
-          .map_cfg =
-              sniff::MapConfig{
-                  .min_chain_length = result["chain"].as<std::uint32_t>(),
-                  .max_chain_gap_length = result["gap"].as<std::uint32_t>(),
-                  .kmer_len = result["kmer-length"].as<std::uint32_t>(),
-                  .f = result["frequent"].as<double>()},
-          .minimize_cfg = sniff::MinimizeConfig{
-              .kmer_len = result["kmer-length"].as<std::uint32_t>(),
-              .window_len = result["window-length"].as<std::uint32_t>()}};
+          .alpha_p = result["alpha"].as<double>(),
+          .beta_p = result["beta"].as<double>(),
+          .filter_freq = result["frequent"].as<double>(),
+          .index_sz = result["index-size"].as<std::uint32_t>(),
+          .kmer_len = result["kmer-length"].as<std::uint32_t>(),
+          .window_len = result["window-length"].as<std::uint32_t>()};
 
       /* clang-format off */
         fmt::print(stderr,
           "[sniff]\n"
-          "\tp: {};\n"
-          "\tk: {}; w: {}; chain: {}; gap: {};\n",
-          cfg.alpha_p,
-          cfg.minimize_cfg.kmer_len, cfg.minimize_cfg.window_len,
-          cfg.map_cfg.min_chain_length, cfg.map_cfg.max_chain_gap_length);
+          "\talpha: {}; beta: {}\n"
+          "\tindex-size:{}; filter-freq: {}; k: {}; w: {};\n",
+          cfg.alpha_p, cfg.beta_p,
+          cfg.index_sz, cfg.filter_freq,
+          cfg.kmer_len, cfg.window_len);
       /* clang-format on */
 
       auto pairs =
