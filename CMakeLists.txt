@@ -52,10 +52,8 @@ add_library(
   src/io.cc
   src/kmer.cc
   src/map.cc
-  src/map_config.cc
   src/match.cc
   src/minimize.cc
-  src/minimize_config.cc
   src/overlap.cc
   src/sketch.cc)
 target_include_directories(
