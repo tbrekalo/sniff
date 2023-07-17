@@ -153,37 +153,17 @@ static auto CreateRcKMerIndex(
           .kmers = std::move(target_kmers)};
 }
 
-static auto IsSpanningOverlap(
+static auto IsOkOvlp(
     Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
     Overlap src_ovlp) -> bool {
-  auto const minimize_cfg = MinimizeConfig{
-      .kmer_len = cfg.kmer_len, .window_len = cfg.window_len, .minhash = false};
-
   using namespace std::placeholders;
   auto const get_read = std::bind(GetReadRefFromSpan, query_reads, _1);
 
-  auto matches = MakeMatches(
-      Minimize(minimize_cfg, get_read(src_ovlp.query_id)->InflateData()),
-      Minimize(minimize_cfg, CreateRcString(get_read(src_ovlp.target_id))));
-
-  auto ovlps = Map(MapConfig{.min_chain_length = 4,
-                             .max_chain_gap_length = 1000,
-                             .kmer_len = cfg.kmer_len},
-                   matches);
-  if (ovlps.size() != 1) {
-    return false;
-  }
-
-  if (auto const& detail_ovlp = ovlps.front();
-      !(1. * (detail_ovlp.query_end - detail_ovlp.query_start) >
-            cfg.beta_p * get_read(src_ovlp.query_id)->inflated_len &&
-        1. * (detail_ovlp.target_end - detail_ovlp.target_start) >
-            cfg.beta_p * get_read(src_ovlp.target_id)->inflated_len)) {
-    return false;
-  }
-
-  return true;
+  return !(1. * (src_ovlp.query_end - src_ovlp.query_start) >
+               cfg.beta_p * get_read(src_ovlp.query_id)->inflated_len &&
+           1. * (src_ovlp.target_end - src_ovlp.target_start) >
+               cfg.beta_p * get_read(src_ovlp.target_id)->inflated_len);
 }
 
 static auto MapMatches(
@@ -199,29 +179,22 @@ static auto MapMatches(
   }
 
   auto dst_overlaps = std::vector<std::optional<Overlap>>(matches.size());
-  tbb::parallel_for(
-      std::size_t(0), target_intervals.size() - 1,
-      [&cfg, query_reads, &matches, &target_intervals,
-       &dst_overlaps](std::size_t read_idx) -> void {
-        auto local_matches =
-            std::span(matches.begin() + target_intervals[read_idx],
-                      matches.begin() + target_intervals[read_idx + 1]);
-        auto local_overlaps = Map({.min_chain_length = 4,
-                                   .max_chain_gap_length = 1000,
-                                   .kmer_len = cfg.kmer_len},
-                                  local_matches);
+  tbb::parallel_for(std::size_t(0), target_intervals.size() - 1,
+                    [&cfg, query_reads, &matches, &target_intervals,
+                     &dst_overlaps](std::size_t read_idx) -> void {
+                      auto local_matches = std::span(
+                          matches.begin() + target_intervals[read_idx],
+                          matches.begin() + target_intervals[read_idx + 1]);
+                      auto local_overlaps = Map({.min_chain_length = 4,
+                                                 .max_chain_gap_length = 800,
+                                                 .kmer_len = cfg.kmer_len},
+                                                local_matches);
 
-        local_overlaps.erase(
-            std::remove_if(local_overlaps.begin(), local_overlaps.end(),
-                           [cfg, query_reads](Overlap const& ovlp) -> bool {
-                             return !IsSpanningOverlap(cfg, query_reads, ovlp);
-                           }),
-            local_overlaps.end());
-
-        if (!local_overlaps.empty()) {
-          dst_overlaps[read_idx] = local_overlaps.front();
-        }
-      });
+                      if (local_overlaps.size() == 1 &&
+                          IsOkOvlp(cfg, query_reads, local_overlaps.front())) {
+                        dst_overlaps[read_idx] = local_overlaps.front();
+                      }
+                    });
 
   auto max_len = 0;
   auto dst = std::optional<Overlap>();
