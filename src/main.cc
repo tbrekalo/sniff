@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
       /* clang-format off */
         fmt::print(stderr,
           "[sniff]\n"
-          "\talpha: {}; beta: {}\n"
+          "\talpha: {:1.2f}; beta: {:1.2f}\n"
           "\tindex-size:{}; filter-freq: {}; k: {}; w: {};\n",
           cfg.alpha_p, cfg.beta_p,
           cfg.index_sz, cfg.filter_freq,

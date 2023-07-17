@@ -59,8 +59,25 @@ static auto GetReadRefFromSpan(
     std::uint32_t read_id) -> std::unique_ptr<biosoup::NucleicAcid> const& {
   return *std::lower_bound(
       reads.begin(), reads.end(), read_id,
-      [](std::unique_ptr<biosoup::NucleicAcid> const& seq,
-         std::uint32_t read_id) -> bool { return read_id; });
+      [](std::unique_ptr<biosoup::NucleicAcid> const& read,
+         std::uint32_t read_id) -> bool { return read->id < read_id; });
+}
+
+static auto GetFrequencyThreshold(KMerLocIndex const& index, double freq)
+    -> std::uint32_t {
+  if (index.size() <= 2) {
+    return 0U - 1;
+  }
+  auto counts = std::vector<std::uint32_t>();
+  counts.reserve(index.size());
+
+  for (auto it : index) {
+    counts.push_back(it.second.count);
+  }
+
+  auto const idx = static_cast<std::size_t>(counts.size() * (1. - freq));
+  std::nth_element(counts.begin(), counts.begin() + idx, counts.end());
+  return counts[idx];
 }
 
 // RcMinimizers -> reverse complement minimizers
@@ -125,23 +142,6 @@ static auto IndexKMers(std::span<Target const> target_kmers) -> KMerLocIndex {
 
   return dst;
 };
-
-static auto GetFrequencyThreshold(KMerLocIndex const& index, double freq)
-    -> std::uint32_t {
-  if (index.size() <= 2) {
-    return 0U - 1;
-  }
-  auto counts = std::vector<std::uint32_t>();
-  counts.reserve(index.size());
-
-  for (auto it : index) {
-    counts.push_back(it.second.count);
-  }
-
-  auto const idx = static_cast<std::size_t>(counts.size() * (1. - freq));
-  std::nth_element(counts.begin(), counts.begin() + idx, counts.end());
-  return counts[idx];
-}
 
 // Rc stands for "reverse complement"
 static auto CreateRcKMerIndex(
@@ -210,6 +210,7 @@ static auto MapMatches(
                                    .max_chain_gap_length = 1000,
                                    .kmer_len = cfg.kmer_len},
                                   local_matches);
+
         local_overlaps.erase(
             std::remove_if(local_overlaps.begin(), local_overlaps.end(),
                            [cfg, query_reads](Overlap const& ovlp) -> bool {
@@ -251,14 +252,13 @@ static auto MapSketchToIndex(
     if (query_sketch.read_id >= target.read_id) {
       return;
     }
-
-    if (auto const len_ratio =
-            1. *
-            std::min(get_read(query_sketch.read_id)->inflated_len,
-                     get_read(target.read_id)->inflated_len) /
-            std::max(get_read(query_sketch.read_id)->inflated_len,
-                     get_read(target.read_id)->inflated_len);
-        len_ratio < min_short_long_ratio) {
+    auto const len_ratio =
+        1. *
+        std::min(get_read(query_sketch.read_id)->inflated_len,
+                 get_read(target.read_id)->inflated_len) /
+        std::max(get_read(query_sketch.read_id)->inflated_len,
+                 get_read(target.read_id)->inflated_len);
+    if (len_ratio < min_short_long_ratio) {
       return;
     }
 
@@ -299,23 +299,30 @@ static auto MapSpanToIndex(
     Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
     KMerLocIndex const& target_index, double threshold)
-    -> std::vector<std::optional<Overlap>> {
+    -> std::vector<Overlap> {
   auto const minimize_cfg = MinimizeConfig{
       .kmer_len = cfg.kmer_len, .window_len = cfg.window_len, .minhash = true};
 
-  auto dst = std::vector<std::optional<Overlap>>(query_reads.size());
+  auto opt_ovlps = std::vector<std::optional<Overlap>>(query_reads.size());
   tbb::parallel_for(
       std::size_t(0), query_reads.size(),
       [&cfg, query_reads, &target_index, threshold, &minimize_cfg,
-       &dst](std::size_t idx) {
+       &opt_ovlps](std::size_t idx) {
         auto sketch =
             Sketch{.read_id = query_reads[idx]->id,
                    .minimizers =
                        Minimize(minimize_cfg, query_reads[idx]->InflateData())};
 
-        dst[idx] =
+        opt_ovlps[idx] =
             MapSketchToIndex(cfg, query_reads, sketch, target_index, threshold);
       });
+
+  auto dst = std::vector<Overlap>();
+  for (auto const& opt_ovlp : opt_ovlps) {
+    if (opt_ovlp) {
+      dst.push_back(*opt_ovlp);
+    }
+  }
 
   return dst;
 }
@@ -411,10 +418,10 @@ auto FindReverseComplementPairs(
         GetFrequencyThreshold(index.locations, cfg.filter_freq));
 
     for (auto& batch_ovlp : batch_ovlps) {
-      if (batch_ovlp && (!opt_ovlps[batch_ovlp->query_id] ||
-                         OverlapError(*batch_ovlp) <
-                             OverlapError(*opt_ovlps[batch_ovlp->query_id]))) {
-        opt_ovlps[batch_ovlp->query_id] = batch_ovlp;
+      if (!opt_ovlps[batch_ovlp.query_id] ||
+          OverlapError(batch_ovlp) <
+              OverlapError(*opt_ovlps[batch_ovlp.query_id])) {
+        opt_ovlps[batch_ovlp.query_id] = batch_ovlp;
       }
     }
 
