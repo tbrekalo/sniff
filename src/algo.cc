@@ -153,7 +153,7 @@ static auto CreateRcKMerIndex(
           .kmers = std::move(target_kmers)};
 }
 
-static auto IsOkOvlp(
+static auto IsStrongOverlap(
     Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
     Overlap src_ovlp) -> bool {
@@ -191,7 +191,7 @@ static auto MapMatches(
                                                 local_matches);
 
                       if (local_overlaps.size() == 1 &&
-                          IsOkOvlp(cfg, query_reads, local_overlaps.front())) {
+                          IsStrongOverlap(cfg, query_reads, local_overlaps.front())) {
                         dst_overlaps[read_idx] = local_overlaps.front();
                       }
                     });
