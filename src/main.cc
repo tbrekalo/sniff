@@ -44,8 +44,6 @@ int main(int argc, char** argv) {
         cxxopts::value<std::uint32_t>()->default_value("15"))
       ("w,window-length", "window length used in mapping",
         cxxopts::value<std::uint32_t>()->default_value("5"))
-      ("i,index-size", "kmer index size as power of 2",
-        cxxopts::value<std::uint32_t>()->default_value("30"))
       ("f,frequent", "filter f most frequent kmers",
         cxxopts::value<double>()->default_value("0.0002"));
     options.add_options("input")
@@ -86,7 +84,6 @@ int main(int argc, char** argv) {
           .alpha_p = result["alpha"].as<double>(),
           .beta_p = result["beta"].as<double>(),
           .filter_freq = result["frequent"].as<double>(),
-          .index_sz = result["index-size"].as<std::uint32_t>(),
           .kmer_len = result["kmer-length"].as<std::uint32_t>(),
           .window_len = result["window-length"].as<std::uint32_t>()};
 
@@ -94,10 +91,9 @@ int main(int argc, char** argv) {
         fmt::print(stderr,
           "[sniff]\n"
           "\talpha: {:1.2f}; beta: {:1.2f}\n"
-          "\tindex-size:{}; filter-freq: {}; k: {}; w: {};\n",
+          "\tfilter-freq: {}; k: {}; w: {};\n",
           cfg.alpha_p, cfg.beta_p,
-          cfg.index_sz, cfg.filter_freq,
-          cfg.kmer_len, cfg.window_len);
+          cfg.filter_freq, cfg.kmer_len, cfg.window_len);
       /* clang-format on */
 
       auto pairs =

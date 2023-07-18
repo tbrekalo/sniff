@@ -15,7 +15,6 @@ class SniffArgs(BaseModel):
     beta: float
     kmer_length: int
     window_length: int
-    index_size: int
     frequent: float
 
 
@@ -30,7 +29,6 @@ DF_COLS = [
     'beta',
     'kmer_length',
     'window_length',
-    'index_size',
     'frequent',
     'runtime_s',
     'peak_memory_gib',
@@ -41,10 +39,9 @@ DF_COLS = [
 DEFAULT_ARGS = SniffArgs(
     threads=32,
     alpha=0.1,
-    beta=0.98,
+    beta=0.9,
     kmer_length=15,
     window_length=5,
-    index_size=26,
     frequent=0.0002,
 )
 

@@ -19,6 +19,8 @@
 
 namespace sniff {
 
+static constexpr auto kIndexSize = 1U << 30U;
+
 template <class... Ts>
 struct overloaded : Ts... {
   using Ts::operator()...;
@@ -87,7 +89,7 @@ static auto ExtractRcMinimizersSortedByVal(
     -> std::vector<Target> {
   auto dst = std::vector<Target>();
   auto const minimize_cfg = MinimizeConfig{
-      .kmer_len = cfg.kmer_len, .window_len = cfg.window_len, .minhash = true};
+      .kmer_len = cfg.kmer_len, .window_len = cfg.window_len, .minhash = false};
 
   auto cnt = std::atomic_size_t(0);
   auto sketches = std::vector<std::vector<Target>>(reads.size());
@@ -160,10 +162,10 @@ static auto IsStrongOverlap(
   using namespace std::placeholders;
   auto const get_read = std::bind(GetReadRefFromSpan, query_reads, _1);
 
-  return !(1. * (src_ovlp.query_end - src_ovlp.query_start) >
-               cfg.beta_p * get_read(src_ovlp.query_id)->inflated_len &&
-           1. * (src_ovlp.target_end - src_ovlp.target_start) >
-               cfg.beta_p * get_read(src_ovlp.target_id)->inflated_len);
+  return 1. * (src_ovlp.query_end - src_ovlp.query_start) >
+             cfg.beta_p * get_read(src_ovlp.query_id)->inflated_len &&
+         1. * (src_ovlp.target_end - src_ovlp.target_start) >
+             cfg.beta_p * get_read(src_ovlp.target_id)->inflated_len;
 }
 
 static auto MapMatches(
@@ -179,22 +181,23 @@ static auto MapMatches(
   }
 
   auto dst_overlaps = std::vector<std::optional<Overlap>>(matches.size());
-  tbb::parallel_for(std::size_t(0), target_intervals.size() - 1,
-                    [&cfg, query_reads, &matches, &target_intervals,
-                     &dst_overlaps](std::size_t read_idx) -> void {
-                      auto local_matches = std::span(
-                          matches.begin() + target_intervals[read_idx],
-                          matches.begin() + target_intervals[read_idx + 1]);
-                      auto local_overlaps = Map({.min_chain_length = 4,
-                                                 .max_chain_gap_length = 800,
-                                                 .kmer_len = cfg.kmer_len},
-                                                local_matches);
+  tbb::parallel_for(
+      std::size_t(0), target_intervals.size() - 1,
+      [&cfg, query_reads, &matches, &target_intervals,
+       &dst_overlaps](std::size_t read_idx) -> void {
+        auto local_matches =
+            std::span(matches.begin() + target_intervals[read_idx],
+                      matches.begin() + target_intervals[read_idx + 1]);
+        auto local_overlaps = Map({.min_chain_length = 4,
+                                   .max_chain_gap_length = 800,
+                                   .kmer_len = cfg.kmer_len},
+                                  local_matches);
 
-                      if (local_overlaps.size() == 1 &&
-                          IsStrongOverlap(cfg, query_reads, local_overlaps.front())) {
-                        dst_overlaps[read_idx] = local_overlaps.front();
-                      }
-                    });
+        if (local_overlaps.size() == 1 &&
+            IsStrongOverlap(cfg, query_reads, local_overlaps.front())) {
+          dst_overlaps[read_idx] = local_overlaps.front();
+        }
+      });
 
   auto max_len = 0;
   auto dst = std::optional<Overlap>();
@@ -274,7 +277,7 @@ static auto MapSpanToIndex(
     KMerLocIndex const& target_index, double threshold)
     -> std::vector<Overlap> {
   auto const minimize_cfg = MinimizeConfig{
-      .kmer_len = cfg.kmer_len, .window_len = cfg.window_len, .minhash = true};
+      .kmer_len = cfg.kmer_len, .window_len = cfg.window_len, .minhash = false};
 
   auto opt_ovlps = std::vector<std::optional<Overlap>>(query_reads.size());
   tbb::parallel_for(
@@ -374,7 +377,7 @@ auto FindReverseComplementPairs(
 
   auto prev_i = std::size_t(0);
   auto batch_size = std::size_t(0);
-  auto const max_batch_size = std::size_t(1) << cfg.index_sz;
+  auto const max_batch_size = kIndexSize;
   for (auto i = 0U, j = i; j < reads.size(); ++j) {
     batch_size += reads[j]->inflated_len;
     if (batch_size < max_batch_size && j + 1U < reads.size() &&
