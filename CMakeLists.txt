@@ -35,14 +35,20 @@ FetchContent_Declare(
 FetchContent_Declare(
   fmt
   GIT_REPOSITORY https://github.com/fmtlib/fmt
-  GIT_TAG 9.1.0)
+  GIT_TAG 10.0.0)
+
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog
+  GIT_TAG v1.12.0)
 
 FetchContent_Declare(
   unordered_dense
   GIT_REPOSITORY https://github.com/martinus/unordered_dense
   GIT_TAG v4.0.0)
 
-FetchContent_MakeAvailable(bioparser biosoup cxxopts fmt unordered_dense)
+FetchContent_MakeAvailable(bioparser biosoup cxxopts fmt spdlog unordered_dense)
+
 
 find_package(TBB)
 add_library(
@@ -62,7 +68,7 @@ target_include_directories(
 target_link_libraries(
   sniff_lib
   PUBLIC biosoup TBB::tbb
-  PRIVATE bioparser fmt unordered_dense)
+  PRIVATE bioparser fmt spdlog unordered_dense)
 
 add_executable(sniff src/main.cc)
 target_include_directories(sniff

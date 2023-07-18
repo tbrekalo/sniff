@@ -32,13 +32,15 @@ int main(int argc, char** argv) {
       ("h,help", "print help")
       ("v,version", "print version")
       ("t,threads", "number of threads to use",
-        cxxopts::value<std::uint32_t>()->default_value("1"));
+        cxxopts::value<std::uint32_t>()->default_value("1"))
+      ("l,log-dir", "directory for log files",
+        cxxopts::value<std::string>()->default_value("sniff-logs"));
     options.add_options("heuristic")
       ("a,alpha",
        "shorter read length as percentage of longer read lenght in pair",
         cxxopts::value<double>()->default_value("0.10"))
       ("b,beta", "minimum required coverage on each read",
-        cxxopts::value<double>()->default_value("0.98"));
+        cxxopts::value<double>()->default_value("0.90"));
     options.add_options("mapping")
       ("k,kmer-length", "kmer length used in mapping",
         cxxopts::value<std::uint32_t>()->default_value("15"))
@@ -85,7 +87,15 @@ int main(int argc, char** argv) {
           .beta_p = result["beta"].as<double>(),
           .filter_freq = result["frequent"].as<double>(),
           .kmer_len = result["kmer-length"].as<std::uint32_t>(),
-          .window_len = result["window-length"].as<std::uint32_t>()};
+          .window_len = result["window-length"].as<std::uint32_t>(),
+          .log_dir = result["log-dir"].as<std::string>()};
+
+      if (!std::filesystem::exists(cfg.log_dir)) {
+        std::filesystem::create_directory(cfg.log_dir);
+      } else if (!std::filesystem::is_directory(cfg.log_dir)) {
+        throw std::runtime_error(
+            "file exits that has the same path as log directory");
+      }
 
       /* clang-format off */
         fmt::print(stderr,
