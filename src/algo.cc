@@ -219,11 +219,11 @@ static auto MapMatches(
         }
       });
 
-  auto max_len = 0;
+  auto max_strength = 0U;
   auto dst = std::optional<sniff::Overlap>();
   for (auto const& ovlp : dst_overlaps) {
-    if (ovlp && OverlapLength(*ovlp) > max_len) {
-      max_len = OverlapLength(*ovlp);
+    if (ovlp && OverlapStrength(cfg, query_reads, *ovlp) > max_strength) {
+      max_strength = OverlapStrength(cfg, query_reads, *ovlp);
       dst = ovlp;
     }
   }
@@ -324,46 +324,22 @@ static auto MapSpanToIndex(
 }
 
 static auto MakeOverlapPairs(
+    sniff::Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> reads,
-    std::span<std::optional<sniff::Overlap> const> opt_ovlps)
-    -> std::vector<sniff::RcPair> {
+    std::vector<sniff::Overlap> ovlps) -> std::vector<sniff::RcPair> {
   auto dst = std::vector<sniff::RcPair>();
-  auto match_ids =
-      std::vector<std::pair<std::uint32_t, std::uint32_t>>(reads.size());
-  for (auto i = 0U; i < match_ids.size(); ++i) {
-    match_ids[i].first = i;
-  }
-
-  for (auto const& opt_ovlp : opt_ovlps) {
-    if (opt_ovlp) {
-      auto const ovlp_len = OverlapLength(*opt_ovlp);
-      if (match_ids[opt_ovlp->query_id].first == opt_ovlp->query_id ||
-          match_ids[opt_ovlp->query_id].second < ovlp_len) {
-        match_ids[opt_ovlp->query_id] = {opt_ovlp->target_id, ovlp_len};
-      }
-
-      if (match_ids[opt_ovlp->target_id].first == opt_ovlp->target_id ||
-          match_ids[opt_ovlp->target_id].second < ovlp_len) {
-        match_ids[opt_ovlp->target_id] = {opt_ovlp->query_id, ovlp_len};
-      }
-    }
-  }
-
-  for (auto lhs = 0U; lhs < match_ids.size(); ++lhs) {
-    auto rhs = match_ids[lhs].first;
-    if (lhs == rhs || match_ids[rhs].first != lhs || lhs > rhs) {
+  for (auto const& ovlp : ovlps) {
+    if ((ovlp.query_id == 0 && ovlp.target_id == 0) ||
+        ovlps[ovlp.target_id] != sniff::ReverseOverlap(ovlp)) {
       continue;
     }
 
-    auto const lhs_str = reads[lhs]->InflateData();
-    auto const rhs_rc_str = CreateRcString(reads[rhs]);
-
     dst.push_back(
-        sniff::RcPair{.lhs = reads[lhs]->name, .rhs = reads[rhs]->name});
-    if (dst.back().lhs > dst.back().rhs) {
-      std::swap(dst.back().lhs, dst.back().rhs);
-    }
+        sniff::RcPair{reads[ovlp.query_id]->name, reads[ovlp.target_id]->name});
   }
+
+  tbb::parallel_sort(dst, std::less<>{});
+  dst.erase(std::unique(dst.begin(), dst.end()), dst.end());
 
   return dst;
 }
@@ -389,7 +365,7 @@ namespace sniff {
 auto FindReverseComplementPairs(
     Config const& cfg, std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
     -> std::vector<RcPair> {
-  auto opt_ovlps = std::vector<std::optional<Overlap>>(reads.size());
+  auto ovlps = std::vector<Overlap>(reads.size());
   reads = ReindexAndSortReads(std::move(reads));
   auto timer = biosoup::Timer{};
   timer.Start();
@@ -417,11 +393,12 @@ auto FindReverseComplementPairs(
         index.locations,
         GetFrequencyThreshold(index.locations, cfg.filter_freq));
 
-    for (auto& batch_ovlp : batch_ovlps) {
-      if (!opt_ovlps[batch_ovlp.query_id] ||
-          OverlapError(batch_ovlp) <
-              OverlapError(*opt_ovlps[batch_ovlp.query_id])) {
-        opt_ovlps[batch_ovlp.query_id] = batch_ovlp;
+    for (auto& ovlp : batch_ovlps) {
+      if (auto const strength = OverlapStrength(cfg, reads, ovlp);
+          OverlapStrength(cfg, reads, ovlps[ovlp.query_id]) <= strength &&
+          OverlapStrength(cfg, reads, ovlps[ovlp.target_id]) <= strength) {
+        ovlps[ovlp.query_id] = ovlp;
+        ovlps[ovlp.target_id] = ReverseOverlap(ovlp);
       }
     }
 
@@ -432,7 +409,7 @@ auto FindReverseComplementPairs(
     i = j + 1;
   }
 
-  auto dst = MakeOverlapPairs(reads, opt_ovlps);
+  auto dst = MakeOverlapPairs(cfg, reads, std::move(ovlps));
   fmt::print(stderr, "\n[FindReverseComplementPairs]({:12.3f}) n pairs: {}\n",
              timer.Stop(), dst.size());
 
