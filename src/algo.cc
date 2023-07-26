@@ -9,7 +9,6 @@
 #include "biosoup/nucleic_acid.hpp"
 #include "biosoup/timer.hpp"
 #include "fmt/core.h"
-#include "spdlog/sinks/basic_file_sink.h"
 #include "tbb/tbb.h"
 
 // sniff
@@ -19,11 +18,6 @@
 #include "sniff/sketch.h"
 
 static constexpr auto kIndexSize = 1U << 30U;
-
-struct Config {
-  sniff::Config sniff;
-  ankerl::unordered_dense::map<std::string, std::filesystem::path> log_files;
-};
 
 template <class... Ts>
 struct overloaded : Ts... {
@@ -88,14 +82,12 @@ static auto GetFrequencyThreshold(KMerLocIndex const& index, double freq)
 
 // RcMinimizers -> reverse complement minimizers
 static auto ExtractRcMinimizersSortedByVal(
-    Config const& cfg,
+    sniff::Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> reads)
     -> std::vector<Target> {
   auto dst = std::vector<Target>();
-  auto const minimize_cfg =
-      sniff::MinimizeConfig{.kmer_len = cfg.sniff.kmer_len,
-                            .window_len = cfg.sniff.window_len,
-                            .minhash = false};
+  auto const minimize_cfg = sniff::MinimizeConfig{
+      .kmer_len = cfg.kmer_len, .window_len = cfg.window_len, .minhash = false};
 
   auto cnt = std::atomic_size_t(0);
   auto sketches = std::vector<std::vector<Target>>(reads.size());
@@ -153,7 +145,7 @@ static auto IndexKMers(std::span<Target const> target_kmers) -> KMerLocIndex {
 
 // Rc stands for "reverse complement"
 static auto CreateRcKMerIndex(
-    Config const& cfg,
+    sniff::Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> target_reads)
     -> Index {
   auto target_kmers = ExtractRcMinimizersSortedByVal(cfg, target_reads);
@@ -161,21 +153,25 @@ static auto CreateRcKMerIndex(
           .kmers = std::move(target_kmers)};
 }
 
-static auto IsStrongOverlap(
-    Config const& cfg,
+static auto OverlapStrength(
+    sniff::Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
-    sniff::Overlap src_ovlp) -> bool {
+    sniff::Overlap src_ovlp) -> std::uint32_t {
   using namespace std::placeholders;
   auto const get_read = std::bind(GetReadRefFromSpan, query_reads, _1);
 
-  return 1. * (src_ovlp.query_end - src_ovlp.query_start) >
-             cfg.sniff.beta_p * get_read(src_ovlp.query_id)->inflated_len &&
-         1. * (src_ovlp.target_end - src_ovlp.target_start) >
-             cfg.sniff.beta_p * get_read(src_ovlp.target_id)->inflated_len;
+  auto const query_covg_len = src_ovlp.query_end - src_ovlp.query_start;
+  auto const target_covg_len = src_ovlp.target_end - src_ovlp.target_start;
+
+  return (1. * query_covg_len >
+              cfg.beta_p * get_read(src_ovlp.query_id)->inflated_len &&
+          1. * target_covg_len >
+              cfg.beta_p * get_read(src_ovlp.target_id)->inflated_len) *
+         (query_covg_len + target_covg_len);
 }
 
 static auto MapMatches(
-    Config const& cfg,
+    sniff::Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
     std::vector<sniff::Match> matches) -> std::optional<sniff::Overlap> {
   auto target_intervals = std::vector<std::uint32_t>{0};
@@ -195,14 +191,31 @@ static auto MapMatches(
         auto local_matches =
             std::span(matches.begin() + target_intervals[read_idx],
                       matches.begin() + target_intervals[read_idx + 1]);
-        auto local_overlaps = Map({.min_chain_length = 4,
-                                   .max_chain_gap_length = 800,
-                                   .kmer_len = cfg.sniff.kmer_len},
-                                  local_matches);
 
-        if (local_overlaps.size() == 1 &&
-            IsStrongOverlap(cfg, query_reads, local_overlaps.front())) {
-          dst_overlaps[read_idx] = local_overlaps.front();
+        auto local_overlaps =
+            [&cfg, query_reads](std::vector<sniff::Overlap> overlaps) {
+              auto dst = std::vector<std::pair<sniff::Overlap, std::uint32_t>>(
+                  overlaps.size());
+              std::transform(
+                  overlaps.begin(), overlaps.end(), dst.begin(),
+                  [&cfg, query_reads](sniff::Overlap ovlp)
+                      -> std::pair<sniff::Overlap, std::uint32_t> {
+                    return {ovlp, OverlapStrength(cfg, query_reads, ovlp)};
+                  });
+
+              std::sort(dst.begin(), dst.end(),
+                        [](std::pair<sniff::Overlap, std::uint32_t> const& lhs,
+                           std::pair<sniff::Overlap, std::uint32_t> const& rhs)
+                            -> bool { return lhs.second > rhs.second; });
+
+              return dst;
+            }(Map({.min_chain_length = 4,
+                   .max_chain_gap_length = 800,
+                   .kmer_len = cfg.kmer_len},
+                  local_matches));
+
+        if (local_overlaps.size() >= 1 && local_overlaps.front().second) {
+          dst_overlaps[read_idx] = local_overlaps.front().first;
         }
       });
 
@@ -219,11 +232,11 @@ static auto MapMatches(
 }
 
 static auto MapSketchToIndex(
-    Config const& cfg,
+    sniff::Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
     sniff::Sketch const& sketch, KMerLocIndex const& index, double threshold)
     -> std::optional<sniff::Overlap> {
-  auto const min_short_long_ratio = 1.0 - cfg.sniff.alpha_p;
+  auto const min_short_long_ratio = 1.0 - cfg.alpha_p;
   auto read_matches = std::vector<sniff::Match>();
 
   using namespace std::placeholders;
@@ -279,14 +292,12 @@ static auto MapSketchToIndex(
 }
 
 static auto MapSpanToIndex(
-    Config const& cfg,
+    sniff::Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
     KMerLocIndex const& target_index, double threshold)
     -> std::vector<sniff::Overlap> {
-  auto const minimize_cfg =
-      sniff::MinimizeConfig{.kmer_len = cfg.sniff.kmer_len,
-                            .window_len = cfg.sniff.window_len,
-                            .minhash = false};
+  auto const minimize_cfg = sniff::MinimizeConfig{
+      .kmer_len = cfg.kmer_len, .window_len = cfg.window_len, .minhash = false};
 
   auto opt_ovlps =
       std::vector<std::optional<sniff::Overlap>>(query_reads.size());
@@ -376,10 +387,8 @@ auto ReindexAndSortReads(
 namespace sniff {
 
 auto FindReverseComplementPairs(
-    Config cfg, std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
+    Config const& cfg, std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
     -> std::vector<RcPair> {
-  auto algo_cfg = ::Config{.sniff = cfg};
-
   auto opt_ovlps = std::vector<std::optional<Overlap>>(reads.size());
   reads = ReindexAndSortReads(std::move(reads));
   auto timer = biosoup::Timer{};
@@ -401,10 +410,10 @@ auto FindReverseComplementPairs(
     }
 
     auto index = CreateRcKMerIndex(
-        algo_cfg, std::span(reads.cbegin() + i, reads.cbegin() + j));
+        cfg, std::span(reads.cbegin() + i, reads.cbegin() + j));
 
     auto batch_ovlps = MapSpanToIndex(
-        algo_cfg, std::span(reads.cbegin() + prev_i, reads.cbegin() + j),
+        cfg, std::span(reads.cbegin() + prev_i, reads.cbegin() + j),
         index.locations,
         GetFrequencyThreshold(index.locations, cfg.filter_freq));
 

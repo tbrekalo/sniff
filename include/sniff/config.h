@@ -11,8 +11,6 @@ struct Config {
   double filter_freq;
   std::uint32_t kmer_len;
   std::uint32_t window_len;
-
-  std::filesystem::path log_dir;
 };
 
 }  // namespace sniff
