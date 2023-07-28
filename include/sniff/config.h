@@ -1,15 +1,16 @@
 #pragma once
 
-#include "sniff/map_config.h"
-#include "sniff/minimize_config.h"
+#include <cstdint>
+#include <filesystem>
 
 namespace sniff {
 
 struct Config {
   double alpha_p;
   double beta_p;
-  MapConfig map_cfg;
-  MinimizeConfig minimize_cfg;
+  double filter_freq;
+  std::uint32_t kmer_len;
+  std::uint32_t window_len;
 };
 
 }  // namespace sniff

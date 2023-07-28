@@ -15,6 +15,8 @@ namespace sniff {
 struct RcPair {
   std::string lhs;
   std::string rhs;
+
+  auto operator<=>(RcPair const&) const noexcept = default;
 };
 
 auto FindReverseComplementPairs(

@@ -20,6 +20,7 @@ struct Overlap {
 
 auto ReverseOverlap(Overlap const& ovlp) -> Overlap;
 auto OverlapLength(Overlap const& ovlp) -> std::uint32_t;
+auto OverlapRatio(Overlap const& ovlp) -> double;
 auto OverlapError(Overlap const& ovlp) -> double;
 
 }  // namespace sniff
