@@ -6,8 +6,7 @@
 #include "bioparser/fasta_parser.hpp"
 #include "bioparser/fastq_parser.hpp"
 #include "biosoup/nucleic_acid.hpp"
-#include "biosoup/timer.hpp"
-#include "fmt/core.h"
+#include "quill/Quill.h"
 #include "tbb/parallel_for.h"
 
 // sniff
@@ -51,23 +50,20 @@ static auto CreateParser(std::filesystem::path const& path)
 
 auto LoadReads(std::filesystem::path const& path)
     -> std::vector<std::unique_ptr<biosoup::NucleicAcid>> {
-  auto timer = biosoup::Timer();
+  auto const logger = quill::get_root_logger();
 
-  timer.Start();
   auto parser = CreateParser(path);
   auto dst = std::vector<std::unique_ptr<biosoup::NucleicAcid>>();
 
   while (true) {
     auto reads = parser->Parse(kChunkSize);
+    LOG_INFO(logger, "batch-n-reads: {};", reads.size());
     if (reads.empty()) {
       break;
     }
+
     dst.insert(dst.end(), std::make_move_iterator(reads.begin()),
                std::make_move_iterator(reads.end()));
-
-    fmt::print(stderr,
-               "\r[sniff::LoadSequences]({:12.3f}) loaded: {} sequences",
-               timer.Lap(), dst.size());
   }
 
   std::sort(dst.begin(), dst.end(),
@@ -76,10 +72,7 @@ auto LoadReads(std::filesystem::path const& path)
               return lhs->id < rhs->id;
             });
 
-  fmt::print(stderr,
-             "\r[sniff::LoadSequences]({:12.3f}) loaded: {} sequences\n",
-             timer.Stop(), dst.size());
-
+  LOG_INFO_NOFN(logger, "total-n-reads: {};", dst.size());
   return dst;
 }
 

@@ -11,9 +11,10 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
 
-option(SNIFF_BUILD_ASAN "Build Debug and RelWithDebInfo with ASAN" ON)
-option(SNIFF_BUILD_TOOLS "Build development tools" ${PROJECT_IS_TOP_LEVEL})
-option(SNIFF_BUILD_TESTS "Build sniff unit tests" ${PROJECT_IS_TOP_LEVEL})
+option(SNIFF_DEV_MODE "Build sniff with development" OFF)
+option(SNIFF_BUILD_ASAN "Build Debug and RelWithDebInfo with ASAN"
+       ${SNIFF_DEV_MODE})
+option(SNIFF_BUILD_TESTS "Build sniff unit tests" ${SNIFF_DEV_MODE})
 
 include(FetchContent)
 
@@ -38,12 +39,24 @@ FetchContent_Declare(
   GIT_TAG 10.0.0)
 
 FetchContent_Declare(
+  quill
+  GIT_REPOSITORY https://github.com/odygrd/quill
+  GIT_TAG v3.2.0)
+
+FetchContent_Declare(
   unordered_dense
   GIT_REPOSITORY https://github.com/martinus/unordered_dense
   GIT_TAG v4.0.0)
 
-FetchContent_MakeAvailable(bioparser biosoup cxxopts fmt unordered_dense)
+FetchContent_MakeAvailable(bioparser biosoup cxxopts fmt quill unordered_dense)
 
+if(SNIFF_DEV_MODE)
+  add_definitions(-DSNIFF_DEV_MODE=1)
+  add_definitions(-DQUILL_ACTIVE_LOG_LEVEL=QUILL_LOG_LEVEL_TRACE_L3)
+else()
+  add_definitions(-DSNIFF_DEV_MODE=0)
+  add_definitions(-DQUILL_ACTIVE_LOG_LEVEL=QUILL_LOG_LEVEL_INFO)
+endif()
 
 find_package(TBB)
 add_library(
@@ -63,18 +76,19 @@ target_include_directories(
 target_link_libraries(
   sniff_lib
   PUBLIC biosoup TBB::tbb
-  PRIVATE bioparser fmt unordered_dense)
+  PRIVATE bioparser fmt quill::quill unordered_dense)
 
 add_executable(sniff src/main.cc)
 target_include_directories(sniff
                            PRIVATE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>)
-target_link_libraries(sniff PRIVATE cxxopts fmt sniff_lib)
+target_link_libraries(sniff PRIVATE cxxopts fmt quill::quill sniff_lib)
 
 if(SNIFF_BUILD_ASAN)
   target_compile_options(
     sniff PRIVATE $<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address>
                   $<$<CONFIG:Debug,RelWithDebInfo>:-fno-omit-frame-pointer>)
-  target_link_options(sniff PRIVATE $<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address>)
+  target_link_options(sniff PRIVATE
+                      $<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address>)
 endif()
 
 set_target_properties(sniff PROPERTIES VERSION ${sniff_VERSION}
@@ -88,6 +102,6 @@ if(SNIFF_BUILD_TESTS)
   include(${CMAKE_CURRENT_LIST_DIR}/test/SniffTest.cmake)
 endif()
 
-if(SNIFF_BUILD_TOOLS)
+if(SNIFF_DEV_MODE)
   include(${CMAKE_CURRENT_LIST_DIR}/tools/SniffTools.cmake)
 endif()

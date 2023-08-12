@@ -7,6 +7,7 @@
 #include "biosoup/timer.hpp"
 #include "cxxopts.hpp"
 #include "fmt/core.h"
+#include "quill/Quill.h"
 #include "tbb/task_arena.h"
 #include "version.h"
 
@@ -24,6 +25,24 @@ static auto GetPeakMemoryUsageKB() -> std::uint32_t {
 }
 
 int main(int argc, char** argv) {
+  auto const logger = [] {
+    auto stderr_handler = quill::stderr_handler();
+    stderr_handler->set_pattern(
+        "[%(ascii_time)](%(function_name)): %(message)");
+
+    auto cfg = quill::Config{
+        .backend_thread_notification_handler =
+            []([[maybe_unused]] std::string const&) {},
+        .default_handlers{stderr_handler},
+        .enable_console_colours = true,
+    };
+
+    quill::configure(cfg);
+    quill::start();
+
+    return quill::get_root_logger();
+  }();
+
   try {
     auto options =
         cxxopts::Options("sniff", "pair up potential reverse complement reads");
@@ -88,17 +107,6 @@ int main(int argc, char** argv) {
           .window_len = result["window-length"].as<std::uint32_t>()
           };
 
-      /* clang-format off */
-        fmt::print(stderr,
-          "[sniff]\n"
-          "\tthreads: {}\n"
-          "\talpha: {:1.2f}; beta: {:1.2f}\n"
-          "\tfilter-freq: {}; k: {}; w: {};\n",
-          n_threads,
-          cfg.alpha_p, cfg.beta_p,
-          cfg.filter_freq, cfg.kmer_len, cfg.window_len);
-      /* clang-format on */
-
       auto pairs =
           sniff::FindReverseComplementPairs(cfg, sniff::LoadReads(reads_path));
       for (auto const& [lhs, rhs] : pairs) {
@@ -106,10 +114,11 @@ int main(int argc, char** argv) {
       }
     });
 
-    fmt::print(stderr, "[sniff::main]({:12.3f}) peak rss {:0.3f} GB\n",
-               timer.Stop(), static_cast<double>(GetPeakMemoryUsageKB()) / 1e6);
+    LOG_INFO(logger, "elapsed-time: {:12.3f}s; peak rss: {:0.3f} GB;",
+
+             timer.Stop(), static_cast<double>(GetPeakMemoryUsageKB()) / 1e6);
   } catch (std::exception const& e) {
-    fmt::print(stderr, "{}\n", e.what());
+    LOG_ERROR(logger, "{}", e.what());
   }
 
   return EXIT_SUCCESS;

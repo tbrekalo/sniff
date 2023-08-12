@@ -1,5 +1,9 @@
 #include "sniff/algo.h"
 
+#ifndef SNIFF_DEV_MODE
+#define SNIFF_DEV_MODE 0
+#endif  // SNIFF_DEV_MODE
+
 #include <functional>
 #include <optional>
 #include <variant>
@@ -7,8 +11,7 @@
 // 3rd party
 #include "ankerl/unordered_dense.h"
 #include "biosoup/nucleic_acid.hpp"
-#include "biosoup/timer.hpp"
-#include "fmt/core.h"
+#include "quill/Quill.h"
 #include "tbb/tbb.h"
 
 // sniff
@@ -18,6 +21,12 @@
 #include "sniff/sketch.h"
 
 static constexpr auto kIndexSize = 1U << 30U;
+
+static constexpr auto kMatchOvlpLogFile = "/tmp/sniff-match-ovlp-log.csv";
+static constexpr auto kMatchOvlpLoggerName = "match-ovlp-logger";
+
+static constexpr auto kSwapPairFile = "/tmp/sniff-swap-pair-log.csv";
+static constexpr auto kSwapPairLoggerName = "swap-pair-logger";
 
 template <class... Ts>
 struct overloaded : Ts... {
@@ -153,21 +162,45 @@ static auto CreateRcKMerIndex(
           .kmers = std::move(target_kmers)};
 }
 
-static auto OverlapStrength(
+static auto OverlapQueryStrength(
     sniff::Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
-    sniff::Overlap src_ovlp) -> std::uint32_t {
+    sniff::Overlap const& src_ovlp) -> double {
   using namespace std::placeholders;
   auto const get_read = std::bind(GetReadRefFromSpan, query_reads, _1);
 
-  auto const query_covg_len = src_ovlp.query_end - src_ovlp.query_start;
-  auto const target_covg_len = src_ovlp.target_end - src_ovlp.target_start;
+  auto const query_covg_len = 1. * (src_ovlp.query_end - src_ovlp.query_start);
+  auto const query_len = 1. * get_read(src_ovlp.query_id)->inflated_len;
 
-  return (1. * query_covg_len >
-              cfg.beta_p * get_read(src_ovlp.query_id)->inflated_len &&
-          1. * target_covg_len >
-              cfg.beta_p * get_read(src_ovlp.target_id)->inflated_len) *
-         (query_covg_len + target_covg_len);
+  return (query_covg_len >= cfg.beta_p * query_len) *
+         (query_covg_len / query_len);
+}
+
+static auto OverlapTargetStrength(
+    sniff::Config const& cfg,
+    std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
+    sniff::Overlap const& src_ovlp) -> double {
+  using namespace std::placeholders;
+  auto const get_read = std::bind(GetReadRefFromSpan, query_reads, _1);
+
+  auto const target_covg_len =
+      1. * (src_ovlp.target_end - src_ovlp.target_start);
+  auto const target_len = 1. * get_read(src_ovlp.target_id)->inflated_len;
+
+  return (target_covg_len > cfg.beta_p * target_len) *
+         (target_covg_len / target_len);
+}
+
+static auto OverlapStrength(
+    sniff::Config const& cfg,
+    std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
+    sniff::Overlap const& src_ovlp) -> double {
+  auto const query_strenght = OverlapQueryStrength(cfg, query_reads, src_ovlp);
+  auto const target_strenght =
+      OverlapTargetStrength(cfg, query_reads, src_ovlp);
+
+  return (query_strenght > cfg.beta_p && target_strenght > cfg.beta_p) *
+         (query_strenght + target_strenght);
 }
 
 static auto MapMatches(
@@ -194,13 +227,13 @@ static auto MapMatches(
 
         auto local_overlaps =
             [&cfg, query_reads](std::vector<sniff::Overlap> overlaps) {
-              auto dst = std::vector<std::pair<sniff::Overlap, std::uint32_t>>(
+              auto dst = std::vector<std::pair<sniff::Overlap, double>>(
                   overlaps.size());
               std::transform(
                   overlaps.begin(), overlaps.end(), dst.begin(),
                   [&cfg, query_reads](sniff::Overlap ovlp)
-                      -> std::pair<sniff::Overlap, std::uint32_t> {
-                    return {ovlp, OverlapStrength(cfg, query_reads, ovlp)};
+                      -> std::pair<sniff::Overlap, double> {
+                    return {ovlp, OverlapQueryStrength(cfg, query_reads, ovlp)};
                   });
 
               std::sort(dst.begin(), dst.end(),
@@ -214,16 +247,39 @@ static auto MapMatches(
                    .kmer_len = cfg.kmer_len},
                   local_matches));
 
-        if (local_overlaps.size() >= 1 && local_overlaps.front().second) {
+        if constexpr (SNIFF_DEV_MODE) {
+          auto logger = quill::get_logger(kMatchOvlpLoggerName);
+          for (auto [ovlp, score] : local_overlaps) {
+            using namespace std::placeholders;
+            auto const get_read =
+                std::bind(GetReadRefFromSpan, query_reads, _1);
+
+            auto query_name = get_read(ovlp.query_id)->name;
+            auto target_name = get_read(ovlp.target_id)->name;
+
+            if (query_name > target_name) {
+              ovlp = sniff::ReverseOverlap(ovlp);
+              std::swap(query_name, target_name);
+            }
+
+            /* clang-format off */
+          LOG_INFO(logger, "{},{},{},{},{},{},{:0.3f}",
+            query_name, ovlp.query_start, ovlp.query_end,
+            target_name, ovlp.target_start, ovlp.target_end, score);
+            /* clang-format on */
+          }
+        }
+        if (local_overlaps.size() >= 1 &&
+            local_overlaps.front().second >= cfg.beta_p - 1e-6) {
           dst_overlaps[read_idx] = local_overlaps.front().first;
         }
       });
 
-  auto max_strength = 0U;
+  auto max_strength = 0.0;
   auto dst = std::optional<sniff::Overlap>();
   for (auto const& ovlp : dst_overlaps) {
-    if (ovlp && OverlapStrength(cfg, query_reads, *ovlp) > max_strength) {
-      max_strength = OverlapStrength(cfg, query_reads, *ovlp);
+    if (ovlp && OverlapQueryStrength(cfg, query_reads, *ovlp) > max_strength) {
+      max_strength = OverlapQueryStrength(cfg, query_reads, *ovlp);
       dst = ovlp;
     }
   }
@@ -365,10 +421,37 @@ namespace sniff {
 auto FindReverseComplementPairs(
     Config const& cfg, std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
     -> std::vector<RcPair> {
+  if (SNIFF_DEV_MODE) {
+    auto log_file = quill::file_handler(kMatchOvlpLogFile, "w+");
+    log_file->set_pattern("%(message)");
+
+    auto logger =
+        quill::create_logger(kMatchOvlpLoggerName, std::move(log_file));
+    logger->set_log_level(quill::LogLevel::TraceL1);
+
+    LOG_INFO(logger,
+             "query_name,query_start,query_end,"
+             "target_name,target_start,target_end,"
+             "score");
+  }
+
+  if (SNIFF_DEV_MODE) {
+    auto log_file = quill::file_handler(kSwapPairFile, "w+");
+    log_file->set_pattern("%(message)");
+
+    auto logger =
+        quill::create_logger(kSwapPairLoggerName, std::move(log_file));
+    logger->set_log_level(quill::LogLevel::TraceL1);
+
+    LOG_INFO(logger,
+             "old_query_name,old_target_name,"
+             "new_query_name,new_target_name");
+  }
+
+  auto const logger = quill::get_root_logger();
+
   auto ovlps = std::vector<Overlap>(reads.size());
   reads = ReindexAndSortReads(std::move(reads));
-  auto timer = biosoup::Timer{};
-  timer.Start();
 
   auto const scale_len =
       [p = 1.0 - cfg.alpha_p](std::uint32_t read_len) -> std::uint32_t {
@@ -393,25 +476,55 @@ auto FindReverseComplementPairs(
         index.locations,
         GetFrequencyThreshold(index.locations, cfg.filter_freq));
 
+    auto create_log_pair =
+        [&reads](Overlap const& ovlp) -> std::pair<std::string, std::string> {
+      if (ovlp.query_id == ovlp.target_id) {
+        return {"", ""};
+      }
+
+      auto query_name = reads[ovlp.query_id]->name;
+      auto target_name = reads[ovlp.target_id]->name;
+
+      if (query_name < target_name) {
+        std::swap(query_name, target_name);
+      }
+
+      return {std::move(query_name), std::move(target_name)};
+    };
+
+    auto log_pair_swap = [](std::pair<std::string, std::string> old_pair,
+                            std::pair<std::string, std::string> new_pair) {
+      auto logger = quill::get_logger(kSwapPairLoggerName);
+      if (old_pair.first.empty() && old_pair.second.empty()) {
+        return;
+      }
+      LOG_INFO(logger, "{},{},{},{}", old_pair.first, old_pair.second,
+               new_pair.first, new_pair.second);
+    };
+
     for (auto& ovlp : batch_ovlps) {
       if (auto const strength = OverlapStrength(cfg, reads, ovlp);
           OverlapStrength(cfg, reads, ovlps[ovlp.query_id]) <= strength &&
           OverlapStrength(cfg, reads, ovlps[ovlp.target_id]) <= strength) {
+        if (SNIFF_DEV_MODE) {
+          auto new_pair = create_log_pair(ovlp);
+          log_pair_swap(create_log_pair(ovlps[ovlp.query_id]), new_pair);
+          log_pair_swap(create_log_pair(ovlps[ovlp.target_id]), new_pair);
+        }
+
         ovlps[ovlp.query_id] = ovlp;
         ovlps[ovlp.target_id] = ReverseOverlap(ovlp);
       }
     }
 
-    fmt::print(stderr, "\r[FindReverseComplementPairs]({:12.3f}) {:2.3f}%",
-               timer.Lap(), 100. * j / reads.size());
+    LOG_INFO(logger, "progress: {:2.3f}%", 100. * j / reads.size());
     batch_size = std::size_t(0);
     prev_i = i;
     i = j + 1;
   }
 
   auto dst = MakeOverlapPairs(cfg, reads, std::move(ovlps));
-  fmt::print(stderr, "\n[FindReverseComplementPairs]({:12.3f}) n pairs: {}\n",
-             timer.Stop(), dst.size());
+  LOG_INFO(logger, "n-pairs: {};", dst.size());
 
   return dst;
 }
