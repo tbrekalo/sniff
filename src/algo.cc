@@ -153,21 +153,45 @@ static auto CreateRcKMerIndex(
           .kmers = std::move(target_kmers)};
 }
 
-static auto OverlapStrength(
+static auto OverlapQueryStrength(
     sniff::Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
-    sniff::Overlap src_ovlp) -> std::uint32_t {
+    sniff::Overlap const& src_ovlp) -> double {
   using namespace std::placeholders;
   auto const get_read = std::bind(GetReadRefFromSpan, query_reads, _1);
 
-  auto const query_covg_len = src_ovlp.query_end - src_ovlp.query_start;
-  auto const target_covg_len = src_ovlp.target_end - src_ovlp.target_start;
+  auto const query_covg_len = 1. * (src_ovlp.query_end - src_ovlp.query_start);
+  auto const query_len = 1. * get_read(src_ovlp.query_id)->inflated_len;
 
-  return (1. * query_covg_len >
-              cfg.beta_p * get_read(src_ovlp.query_id)->inflated_len &&
-          1. * target_covg_len >
-              cfg.beta_p * get_read(src_ovlp.target_id)->inflated_len) *
-         (query_covg_len + target_covg_len);
+  return (query_covg_len >= cfg.beta_p * query_len) *
+         (query_covg_len / query_len);
+}
+
+static auto OverlapTargetStrength(
+    sniff::Config const& cfg,
+    std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
+    sniff::Overlap const& src_ovlp) -> double {
+  using namespace std::placeholders;
+  auto const get_read = std::bind(GetReadRefFromSpan, query_reads, _1);
+
+  auto const target_covg_len =
+      1. * (src_ovlp.target_end - src_ovlp.target_start);
+  auto const target_len = 1. * get_read(src_ovlp.target_id)->inflated_len;
+
+  return (target_covg_len > cfg.beta_p * target_len) *
+         (target_covg_len / target_len);
+}
+
+static auto OverlapStrength(
+    sniff::Config const& cfg,
+    std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
+    sniff::Overlap const& src_ovlp) -> double {
+  auto const query_strenght = OverlapQueryStrength(cfg, query_reads, src_ovlp);
+  auto const target_strenght =
+      OverlapTargetStrength(cfg, query_reads, src_ovlp);
+
+  return (query_strenght > cfg.beta_p && target_strenght > cfg.beta_p) *
+         (query_strenght + target_strenght);
 }
 
 static auto MapMatches(
@@ -194,13 +218,13 @@ static auto MapMatches(
 
         auto local_overlaps =
             [&cfg, query_reads](std::vector<sniff::Overlap> overlaps) {
-              auto dst = std::vector<std::pair<sniff::Overlap, std::uint32_t>>(
+              auto dst = std::vector<std::pair<sniff::Overlap, double>>(
                   overlaps.size());
               std::transform(
                   overlaps.begin(), overlaps.end(), dst.begin(),
                   [&cfg, query_reads](sniff::Overlap ovlp)
-                      -> std::pair<sniff::Overlap, std::uint32_t> {
-                    return {ovlp, OverlapStrength(cfg, query_reads, ovlp)};
+                      -> std::pair<sniff::Overlap, double> {
+                    return {ovlp, OverlapQueryStrength(cfg, query_reads, ovlp)};
                   });
 
               std::sort(dst.begin(), dst.end(),
@@ -214,16 +238,17 @@ static auto MapMatches(
                    .kmer_len = cfg.kmer_len},
                   local_matches));
 
-        if (local_overlaps.size() >= 1 && local_overlaps.front().second) {
+        if (local_overlaps.size() >= 1 &&
+            local_overlaps.front().second >= cfg.beta_p - 1e-6) {
           dst_overlaps[read_idx] = local_overlaps.front().first;
         }
       });
 
-  auto max_strength = 0U;
+  auto max_strength = 0.0;
   auto dst = std::optional<sniff::Overlap>();
   for (auto const& ovlp : dst_overlaps) {
-    if (ovlp && OverlapStrength(cfg, query_reads, *ovlp) > max_strength) {
-      max_strength = OverlapStrength(cfg, query_reads, *ovlp);
+    if (ovlp && OverlapQueryStrength(cfg, query_reads, *ovlp) > max_strength) {
+      max_strength = OverlapQueryStrength(cfg, query_reads, *ovlp);
       dst = ovlp;
     }
   }
