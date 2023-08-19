@@ -34,6 +34,11 @@ FetchContent_Declare(
   GIT_TAG v3.1.1)
 
 FetchContent_Declare(
+  edlib
+  GIT_REPOSITORY https://github.com/Martinsos/edlib
+  GIT_TAG v1.2.7)
+
+FetchContent_Declare(
   fmt
   GIT_REPOSITORY https://github.com/fmtlib/fmt
   GIT_TAG 10.0.0)
@@ -48,7 +53,14 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/martinus/unordered_dense
   GIT_TAG v4.0.0)
 
-FetchContent_MakeAvailable(bioparser biosoup cxxopts fmt quill unordered_dense)
+FetchContent_MakeAvailable(
+  bioparser
+  biosoup
+  cxxopts
+  edlib
+  fmt
+  quill
+  unordered_dense)
 
 if(SNIFF_DEV_MODE)
   add_definitions(-DSNIFF_DEV_MODE=1)
@@ -76,7 +88,7 @@ target_include_directories(
 target_link_libraries(
   sniff_lib
   PUBLIC biosoup TBB::tbb
-  PRIVATE bioparser fmt quill::quill unordered_dense)
+  PRIVATE bioparser edlib fmt quill::quill unordered_dense)
 
 add_executable(sniff src/main.cc)
 target_include_directories(sniff

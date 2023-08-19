@@ -14,6 +14,8 @@ struct Overlap {
   std::uint32_t target_start;
   std::uint32_t target_end;
 
+  std::uint32_t n_matches;
+
   friend constexpr auto operator<=>(const Overlap& lhs,
                                     const Overlap& rhs) = default;
 };

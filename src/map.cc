@@ -60,7 +60,6 @@ auto Map(MapConfig cfg, std::span<Match const> src_matches)
       if (i - j >= cfg.min_chain_length) {
         auto chain = FindLongestQueryChain(
             std::span(matches.cbegin() + j, matches.cbegin() + i));
-
         dst.push_back(
             Overlap{.query_id = chain.front().query_id,
                     .query_start = chain.front().query_pos,
@@ -68,7 +67,8 @@ auto Map(MapConfig cfg, std::span<Match const> src_matches)
 
                     .target_id = chain.front().target_id,
                     .target_start = chain.front().target_pos,
-                    .target_end = chain.back().target_pos + cfg.kmer_len});
+                    .target_end = chain.back().target_pos + cfg.kmer_len,
+                    .n_matches = static_cast<std::uint32_t>(chain.size())});
       }
       j = i;
     }
