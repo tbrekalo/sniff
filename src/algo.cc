@@ -349,9 +349,15 @@ static auto MapMatches(
             auto const edit_distance_norm =
                 [query_str = query->InflateData(
                      ovlp.query_start, ovlp.query_end - ovlp.query_start),
-                 target_str = query->InflateData(
-                     ovlp.target_start,
-                     ovlp.target_end - ovlp.target_start)]() {
+                 target_str = [](std::string seq) -> std::string {
+                   auto tmp = biosoup::NucleicAcid("", seq);
+                   std::string{}.swap(seq);
+
+                   tmp.ReverseAndComplement();
+                   return tmp.InflateData();
+                 }(query->InflateData(ovlp.target_start,
+                                                  ovlp.target_end -
+                                                      ovlp.target_start))]() {
                   auto const edlib_res = edlibAlign(
                       query_str.data(), query_str.size(), target_str.data(),
                       target_str.size(),
