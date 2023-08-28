@@ -22,11 +22,11 @@
 
 static constexpr auto kIndexSize = 1U << 30U;
 
-static constexpr auto kCoefs =
-    std::tuple{11.57313245, -7.62558864,  -3.94786743,
-               21.98504372, -10.46454548, -11.52078862};
+static constexpr auto kCoefs = std::tuple{
+    9.42746909, -6.64572836, -2.78147289, 16.18407094, -7.31525403, -8.86853227,
+};
 
-static constexpr auto kIntercept = -31.88110504;
+static constexpr auto kIntercept = -23.47084474;
 
 template <class... Args>
 requires((std::is_integral_v<Args> || std::is_floating_point_v<Args>) ||
