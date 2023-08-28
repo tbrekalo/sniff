@@ -44,7 +44,6 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(bioparser biosoup cxxopts fmt unordered_dense)
 
-
 find_package(TBB)
 add_library(
   sniff_lib
@@ -74,7 +73,8 @@ if(SNIFF_BUILD_ASAN)
   target_compile_options(
     sniff PRIVATE $<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address>
                   $<$<CONFIG:Debug,RelWithDebInfo>:-fno-omit-frame-pointer>)
-  target_link_options(sniff PRIVATE $<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address>)
+  target_link_options(sniff PRIVATE
+                      $<$<CONFIG:Debug,RelWithDebInfo>:-fsanitize=address>)
 endif()
 
 set_target_properties(sniff PROPERTIES VERSION ${sniff_VERSION}
