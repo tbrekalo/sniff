@@ -11,7 +11,6 @@
 #include "ankerl/unordered_dense.h"
 #include "biosoup/nucleic_acid.hpp"
 #include "biosoup/timer.hpp"
-#include "edlib.h"
 #include "fmt/core.h"
 #include "tbb/tbb.h"
 
@@ -227,17 +226,6 @@ static auto OverlapScore(
          (query_strenght + target_strenght) / 2.;
 }
 
-static auto CalcNormEditDist(std::string const& query_str,
-                             std::string const& target_str) {
-  auto const edlib_res = edlibAlign(
-      query_str.data(), query_str.size(), target_str.data(), target_str.size(),
-      edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, nullptr, 0));
-  auto const dst = edlib_res.editDistance;
-  edlibFreeAlignResult(edlib_res);
-
-  return static_cast<double>(dst) /
-         std::max(query_str.size(), target_str.size());
-}
 
 static auto MakeScoredOverlap(
     sniff::Config const& cfg,
