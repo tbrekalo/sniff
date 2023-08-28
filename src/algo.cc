@@ -1,14 +1,17 @@
 #include "sniff/algo.h"
 
+#include <cmath>
 #include <functional>
 #include <numeric>
 #include <optional>
+#include <type_traits>
 #include <variant>
 
 // 3rd party
 #include "ankerl/unordered_dense.h"
 #include "biosoup/nucleic_acid.hpp"
 #include "biosoup/timer.hpp"
+#include "edlib.h"
 #include "fmt/core.h"
 #include "tbb/tbb.h"
 
@@ -19,6 +22,23 @@
 #include "sniff/sketch.h"
 
 static constexpr auto kIndexSize = 1U << 30U;
+
+static constexpr auto kCoefs =
+    std::tuple{11.57313245, -7.62558864,  -3.94786743,
+               21.98504372, -10.46454548, -11.52078862};
+
+static constexpr auto kIntercept = -31.88110504;
+
+template <class... Args>
+requires((std::is_integral_v<Args> || std::is_floating_point_v<Args>) ||
+         ...) static constexpr auto PredictIsValidOvlp(std::tuple<Args...> args)
+    -> bool {
+  auto x = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+    return (kIntercept + ... + (std::get<Is>(kCoefs) * std::get<Is>(args)));
+  }
+  (std::make_index_sequence<sizeof...(Args)>{});
+  return (1. / (1. + std::exp(-x))) >= 0.50;
+}
 
 template <class... Ts>
 struct overloaded : Ts... {
@@ -156,7 +176,15 @@ static auto CreateRcKMerIndex(
 
 struct OverlapScored {
   sniff::Overlap overlap;
-  double score;
+
+  double query_score;
+  double target_score;
+
+  double query_lhs_overhang;
+  double query_rhs_overhang;
+
+  double target_lhs_overhang;
+  double target_rhs_overhang;
 };
 
 static auto OverlapQueryScore(
@@ -199,6 +227,64 @@ static auto OverlapScore(
          (query_strenght + target_strenght) / 2.;
 }
 
+static auto CalcNormEditDist(std::string const& query_str,
+                             std::string const& target_str) {
+  auto const edlib_res = edlibAlign(
+      query_str.data(), query_str.size(), target_str.data(), target_str.size(),
+      edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, nullptr, 0));
+  auto const dst = edlib_res.editDistance;
+  edlibFreeAlignResult(edlib_res);
+
+  return static_cast<double>(dst) /
+         std::max(query_str.size(), target_str.size());
+}
+
+static auto MakeScoredOverlap(
+    sniff::Config const& cfg,
+    std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
+    sniff::Overlap const& ovlp) -> std::optional<OverlapScored> {
+  using namespace std::placeholders;
+  auto const get_read = std::bind(GetReadRefFromSpan, query_reads, _1);
+
+  auto const& query = get_read(ovlp.query_id);
+  auto const query_len = query->inflated_len;
+
+  auto const& target = get_read(ovlp.target_id);
+  auto const& target_len = target->inflated_len;
+
+  auto const query_score = OverlapQueryScore(cfg, query_reads, ovlp);
+  auto const target_score = OverlapTargetScore(cfg, query_reads, ovlp);
+
+  auto const query_lhs_overhang =
+      static_cast<double>(ovlp.query_start) / query_len;
+  auto const query_rhs_overhang =
+      static_cast<double>(query_len - ovlp.query_end) / query_len;
+
+  auto const target_lhs_overhang =
+      static_cast<double>(ovlp.target_start) / target_len;
+  auto const target_rhs_overhang =
+      static_cast<double>(target_len - ovlp.target_end) / target_len;
+
+  if (!PredictIsValidOvlp(
+          std::tuple{query_score, query_lhs_overhang, query_rhs_overhang,
+                     target_score, target_lhs_overhang, target_rhs_overhang})) {
+    return std::nullopt;
+  }
+
+  return OverlapScored{
+      .overlap = ovlp,
+
+      .query_score = query_score,
+      .target_score = target_score,
+
+      .query_lhs_overhang = query_lhs_overhang,
+      .query_rhs_overhang = query_rhs_overhang,
+
+      .target_lhs_overhang = target_lhs_overhang,
+      .target_rhs_overhang = target_rhs_overhang,
+  };
+}
+
 // Assumes that the input is grouped by (query_id, target_id) pairs and overlaps
 // in a group are non-overlapping and sorted by ascending (query, target)
 // positions.
@@ -213,27 +299,28 @@ static auto MergeOverlaps(
 
   auto buff = std::vector<OverlapScored>{
       {.overlap = overlaps.front(),
-       .score = OverlapQueryScore(cfg, query_reads, overlaps.front())}};
+       .query_score = OverlapQueryScore(cfg, query_reads, overlaps.front())}};
 
   auto merge_overlaps = [&cfg,
                          query_reads](std::span<OverlapScored const> ovlps)
       -> std::optional<OverlapScored> {
-    if (auto const score_sum = std::transform_reduce(
-            ovlps.begin(), ovlps.end(), 0., std::plus<>{},
-            [](OverlapScored const& ovlp) -> double { return ovlp.score; });
+    if (auto const score_sum =
+            std::transform_reduce(ovlps.begin(), ovlps.end(), 0., std::plus<>{},
+                                  [](OverlapScored const& ovlp) -> double {
+                                    return ovlp.query_score;
+                                  });
         score_sum > cfg.beta_p) {
-      auto const merged_ovlp = sniff::Overlap{
-          .query_id = ovlps.front().overlap.query_id,
-          .query_start = ovlps.front().overlap.query_start,
-          .query_end = ovlps.back().overlap.query_end,
+      return MakeScoredOverlap(
+          cfg, query_reads,
+          sniff::Overlap{
+              .query_id = ovlps.front().overlap.query_id,
+              .query_start = ovlps.front().overlap.query_start,
+              .query_end = ovlps.back().overlap.query_end,
 
-          .target_id = ovlps.front().overlap.target_id,
-          .target_start = ovlps.front().overlap.target_start,
-          .target_end = ovlps.back().overlap.target_end,
-      };
-      return OverlapScored{
-          .overlap = merged_ovlp,
-          .score = OverlapQueryScore(cfg, query_reads, merged_ovlp)};
+              .target_id = ovlps.front().overlap.target_id,
+              .target_start = ovlps.front().overlap.target_start,
+              .target_end = ovlps.back().overlap.target_end,
+          });
     }
 
     return std::nullopt;
@@ -245,7 +332,7 @@ static auto MergeOverlaps(
          overlaps[i].target_id == overlaps[j].target_id)) {
       buff.push_back(
           {.overlap = overlaps[j],
-           .score = OverlapQueryScore(cfg, query_reads, overlaps[j])});
+           .query_score = OverlapQueryScore(cfg, query_reads, overlaps[j])});
     } else {
       if (auto const opt_ovlp = merge_overlaps(buff); opt_ovlp) {
         dst.push_back(*opt_ovlp);
@@ -254,7 +341,7 @@ static auto MergeOverlaps(
       buff.clear();
       buff.push_back(
           {.overlap = overlaps[j],
-           .score = OverlapQueryScore(cfg, query_reads, overlaps[j])});
+           .query_score = OverlapQueryScore(cfg, query_reads, overlaps[j])});
 
       i = j;
     }
@@ -274,7 +361,7 @@ static auto ScoreOverlaps(
   auto dst = MergeOverlaps(cfg, query_reads, overlaps);
   std::sort(dst.begin(), dst.end(),
             [](OverlapScored const& lhs, OverlapScored const& rhs) -> bool {
-              return lhs.score > rhs.score;
+              return lhs.query_score > rhs.query_score;
             });
 
   return dst;
@@ -312,7 +399,7 @@ static auto MapMatches(
               local_matches));
 
         if (local_overlaps.size() >= 1 &&
-            local_overlaps.front().score >= cfg.beta_p - 1e-6) {
+            local_overlaps.front().query_score >= cfg.beta_p - 1e-6) {
           dst_overlaps[read_idx] = local_overlaps.front().overlap;
         }
       });
