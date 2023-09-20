@@ -12,7 +12,7 @@ jobs:
           - ubuntu-latest
         image:
           - gcc:11
-          - silkeh/clang:10
+          - silkeh/clang:11
 
         build-type:
           - debug

@@ -42,7 +42,7 @@ Usage:
 
 - linux kernel 2.6.32 or higher
 - gcc 11 or higher
-- clang 10 or higher
+- clang 11 or higher
 - intel tbb 2020.3
   - should be compatible with later oneapi versions
 - cmake 3.21 or higher
