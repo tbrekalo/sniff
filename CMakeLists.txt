@@ -12,7 +12,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
 
 option(SNIFF_BUILD_ASAN "Build Debug and RelWithDebInfo with ASAN" ON)
-option(SNIFF_BUILD_TOOLS "Build development tools" ${PROJECT_IS_TOP_LEVEL})
+option(SNIFF_BUILD_TOOLS "Build development tools" OFF)
 option(SNIFF_BUILD_TESTS "Build sniff unit tests" ${PROJECT_IS_TOP_LEVEL})
 
 include(FetchContent)
@@ -27,24 +27,13 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/rvaser/biosoup
   GIT_TAG 0.10.0)
 
-FetchContent_Declare(
-  cxxopts
-  GIT_REPOSITORY https://github.com/jarro2783/cxxopts
-  GIT_TAG v3.1.1)
+FetchContent_MakeAvailable(bioparser biosoup)
 
-FetchContent_Declare(
-  fmt
-  GIT_REPOSITORY https://github.com/fmtlib/fmt
-  GIT_TAG 10.0.0)
+find_package(cxxopts REQUIRED)
+find_package(fmt REQUIRED)
+find_package(TBB REQUIRED)
+find_package(unordered_dense REQUIRED)
 
-FetchContent_Declare(
-  unordered_dense
-  GIT_REPOSITORY https://github.com/martinus/unordered_dense
-  GIT_TAG v4.0.0)
-
-FetchContent_MakeAvailable(bioparser biosoup cxxopts fmt unordered_dense)
-
-find_package(TBB)
 add_library(
   sniff_lib
   src/algo.cc
@@ -62,12 +51,12 @@ target_include_directories(
 target_link_libraries(
   sniff_lib
   PUBLIC biosoup TBB::tbb
-  PRIVATE bioparser fmt unordered_dense)
+  PRIVATE bioparser fmt::fmt unordered_dense::unordered_dense)
 
 add_executable(sniff src/main.cc)
 target_include_directories(sniff
                            PRIVATE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>)
-target_link_libraries(sniff PRIVATE cxxopts fmt sniff_lib)
+target_link_libraries(sniff PRIVATE cxxopts::cxxopts fmt::fmt sniff_lib)
 
 if(SNIFF_BUILD_ASAN)
   target_compile_options(

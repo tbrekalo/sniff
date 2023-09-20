@@ -2,6 +2,8 @@
 
 Heuristic tool for pairing up reverse complement reads in fasta/fastq files.
 
+![ci](https://github.com/tbrekalo/sniff/actions/workflows/ci.yml/badge.svg)
+
 ## Methods
 
 Sniff loads sequences in batches displaying progress along the way. Once all sequences have been loaded into memory they are again processed in batches. Each batch is used for construcing a target index from reverse complemented reads. Original reads are then mapped against the constructed index
@@ -39,8 +41,8 @@ Usage:
 ## Dependencies
 
 - linux kernel 2.6.32 or higher
-- gcc 10.4 or higher
-- clang 10.1 or higher
+- gcc 11 or higher
+- clang 11 or higher
 - intel tbb 2020.3
   - should be compatible with later oneapi versions
 - cmake 3.21 or higher
