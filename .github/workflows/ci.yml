@@ -23,7 +23,7 @@ jobs:
       options: --user root
 
     steps:
-      - uses: actions/checkout@4
+      - uses: actions/checkout@v4
 
       - name: enable-scripts
         run: chmod +x scripts/ci/*
