@@ -10,5 +10,6 @@ if(NOT wfa2_POPULATED)
 endif()
 
 add_executable(pairs_edit_dist ${CMAKE_CURRENT_LIST_DIR}/src/pairs_edit_dist.cc)
-target_link_libraries(pairs_edit_dist PRIVATE cxxopts fmt sniff_lib
-                                              unordered_dense wfa2cpp_static)
+target_link_libraries(
+  pairs_edit_dist PRIVATE cxxopts::cxxopts fmt::fmt sniff_lib
+                          unordered_dense::unordered_dense wfa2cpp_static)
