@@ -1,0 +1,62 @@
+name: sniff-ci
+
+on: push
+run-name: ${{ github.actor }}
+
+jobs:
+  linux-unit-tests:
+    name: "linux-unit-tests"
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+        image:
+          - gcc:11
+          - silkeh/clang:10
+
+        build-type:
+          - debug
+
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+      options: --user root
+
+    steps:
+      - uses: actions/checkout@4
+
+      - name: enable-scripts
+        run: chmod +x scripts/ci/*
+
+      - name: install-cmake
+        run: ./scripts/ci/install_cmake.sh
+
+      - name: install-conan-ninja
+        run: ./scripts/ci/install_conan.sh
+
+      - name: create-build-directory
+        run: cmake -E make_directory build
+
+      - name: conan-build-config
+        working-directory: build
+        run: >
+          conan install ..
+          --build=missing
+          -s build_type=Debug
+          -s compiler.cppstd=gnu20
+          -s compiler.libcxx=libstdc++;
+
+      - name: cmake-build-config
+        working-directory: build
+        run: >
+          cmake ..
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake
+
+      - name: build
+        working-directory: build
+        run: cmake --build .
+
+      - name: run-tests
+        working-directory: build
+        run: ./bin/sniff_test
