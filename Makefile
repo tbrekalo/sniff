@@ -17,6 +17,7 @@ build-debug: conanfile.txt
 		-s build_type=Debug -s compiler.cppstd=gnu20; \
 	cd $@; \
 	cmake .. -G $(GEN) -DCMAKE_BUILD_TYPE=Debug \
+		-DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
 		-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake;
 
 debug: build-debug
@@ -32,6 +33,7 @@ build-relwithdebinfo: conanfile.txt
 		-s build_type=RelWithDebInfo -s compiler.cppstd=gnu20; \
 	cd $@; \
 	cmake .. -G $(GEN) -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
 		-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake;
 
 relwithdebinfo: build-relwithdebinfo
@@ -46,6 +48,7 @@ build: conanfile.txt
 		--build=missing \
 		-s build_type=Release -s compiler.cppstd=gnu20; \
 	cmake -B $@ -G $(GEN) -DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
 		-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake;
 
 release: build
