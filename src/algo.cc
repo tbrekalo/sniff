@@ -22,22 +22,7 @@
 
 static constexpr auto kIndexSize = 1U << 30U;
 
-static constexpr auto kCoefs = std::tuple{
-    9.42746909, -6.64572836, -2.78147289, 16.18407094, -7.31525403, -8.86853227,
-};
-
 static constexpr auto kIntercept = -23.47084474;
-
-template <class... Args>
-requires((std::is_integral_v<Args> || std::is_floating_point_v<Args>) ||
-         ...) static constexpr auto PredictIsValidOvlp(std::tuple<Args...> args)
-    -> bool {
-  auto x = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-    return (kIntercept + ... + (std::get<Is>(kCoefs) * std::get<Is>(args)));
-  }
-  (std::make_index_sequence<sizeof...(Args)>{});
-  return (1. / (1. + std::exp(-x))) >= 0.50;
-}
 
 template <class... Ts>
 struct overloaded : Ts... {
@@ -63,6 +48,23 @@ struct Index {
   KMerLocIndex locations;
   std::vector<Target> kmers;
 };
+
+static auto FlattenOverlapVec(std::vector<std::vector<sniff::Overlap>> overlaps)
+    -> std::vector<sniff::Overlap> {
+  auto dst = std::vector<sniff::Overlap>();
+  dst.reserve(std::transform_reduce(
+      overlaps.begin(), overlaps.end(), std::size_t(0), std::plus<>{},
+      [](std::vector<sniff::Overlap> const& vec) -> std::size_t {
+        return vec.size();
+      }));
+
+  for (auto& it : overlaps) {
+    dst.insert(dst.end(), it.begin(), it.end());
+    std::vector<sniff::Overlap>{}.swap(it);
+  }
+
+  return dst;
+}
 
 static auto CreateRcString(std::unique_ptr<biosoup::NucleicAcid> const& read)
     -> std::string {
@@ -173,33 +175,6 @@ static auto CreateRcKMerIndex(
           .kmers = std::move(target_kmers)};
 }
 
-struct OverlapScored {
-  sniff::Overlap overlap;
-
-  double query_score;
-  double target_score;
-
-  double query_lhs_overhang;
-  double query_rhs_overhang;
-
-  double target_lhs_overhang;
-  double target_rhs_overhang;
-};
-
-static auto OverlapQueryScore(
-    sniff::Config const& cfg,
-    std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
-    sniff::Overlap const& src_ovlp) -> double {
-  using namespace std::placeholders;
-  auto const get_read = std::bind(GetReadRefFromSpan, query_reads, _1);
-
-  auto const query_covg_len = 1. * (src_ovlp.query_end - src_ovlp.query_start);
-  auto const query_len = 1. * get_read(src_ovlp.query_id)->inflated_len;
-
-  return (query_covg_len >= cfg.beta_p * query_len) *
-         (query_covg_len / query_len);
-}
-
 static auto OverlapTargetScore(
     sniff::Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
@@ -215,100 +190,40 @@ static auto OverlapTargetScore(
          (target_covg_len / target_len);
 }
 
-static auto OverlapScore(
-    sniff::Config const& cfg,
-    std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
-    sniff::Overlap const& src_ovlp) -> double {
-  auto const query_strenght = OverlapQueryScore(cfg, query_reads, src_ovlp);
-  auto const target_strenght = OverlapTargetScore(cfg, query_reads, src_ovlp);
-
-  return (query_strenght > cfg.beta_p && target_strenght > cfg.beta_p) *
-         (query_strenght + target_strenght) / 2.;
-}
-
-
-static auto MakeScoredOverlap(
-    sniff::Config const& cfg,
-    std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
-    sniff::Overlap const& ovlp) -> std::optional<OverlapScored> {
-  using namespace std::placeholders;
-  auto const get_read = std::bind(GetReadRefFromSpan, query_reads, _1);
-
-  auto const& query = get_read(ovlp.query_id);
-  auto const query_len = query->inflated_len;
-
-  auto const& target = get_read(ovlp.target_id);
-  auto const& target_len = target->inflated_len;
-
-  auto const query_score = OverlapQueryScore(cfg, query_reads, ovlp);
-  auto const target_score = OverlapTargetScore(cfg, query_reads, ovlp);
-
-  auto const query_lhs_overhang =
-      static_cast<double>(ovlp.query_start) / query_len;
-  auto const query_rhs_overhang =
-      static_cast<double>(query_len - ovlp.query_end) / query_len;
-
-  auto const target_lhs_overhang =
-      static_cast<double>(ovlp.target_start) / target_len;
-  auto const target_rhs_overhang =
-      static_cast<double>(target_len - ovlp.target_end) / target_len;
-
-  if (!PredictIsValidOvlp(
-          std::tuple{query_score, query_lhs_overhang, query_rhs_overhang,
-                     target_score, target_lhs_overhang, target_rhs_overhang})) {
-    return std::nullopt;
-  }
-
-  return OverlapScored{
-      .overlap = ovlp,
-
-      .query_score = query_score,
-      .target_score = target_score,
-
-      .query_lhs_overhang = query_lhs_overhang,
-      .query_rhs_overhang = query_rhs_overhang,
-
-      .target_lhs_overhang = target_lhs_overhang,
-      .target_rhs_overhang = target_rhs_overhang,
-  };
-}
-
 // Assumes that the input is grouped by (query_id, target_id) pairs and overlaps
 // in a group are non-overlapping and sorted by ascending (query, target)
 // positions.
 static auto MergeOverlaps(
     sniff::Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
-    std::span<sniff::Overlap const> overlaps) -> std::vector<OverlapScored> {
-  auto dst = std::vector<OverlapScored>();
+    std::span<sniff::Overlap const> overlaps) -> std::vector<sniff::Overlap> {
+  auto dst = std::vector<sniff::Overlap>();
   if (overlaps.empty()) {
     return dst;
   }
 
-  auto buff = std::vector<OverlapScored>{
-      {.overlap = overlaps.front(),
-       .query_score = OverlapQueryScore(cfg, query_reads, overlaps.front())}};
-
+  auto buff = std::vector<sniff::Overlap>{overlaps.front()};
   auto merge_overlaps = [&cfg,
-                         query_reads](std::span<OverlapScored const> ovlps)
-      -> std::optional<OverlapScored> {
-    if (auto const score_sum =
-            std::transform_reduce(ovlps.begin(), ovlps.end(), 0., std::plus<>{},
-                                  [](OverlapScored const& ovlp) -> double {
-                                    return ovlp.query_score;
-                                  });
+                         query_reads](std::span<sniff::Overlap const> ovlps)
+      -> std::optional<sniff::Overlap> {
+    if (auto const score_sum = std::transform_reduce(
+            ovlps.begin(), ovlps.end(), 0., std::plus<>{},
+            [](sniff::Overlap const& ovlp) -> double {
+              return static_cast<double>(ovlp.query_end - ovlp.query_start) /
+                     ovlp.query_length;
+            });
         score_sum > cfg.beta_p) {
-      return MakeScoredOverlap(
-          cfg, query_reads,
-          sniff::Overlap{
-              .query_id = ovlps.front().overlap.query_id,
-              .query_start = ovlps.front().overlap.query_start,
-              .query_end = ovlps.back().overlap.query_end,
+      return sniff::Overlap{
+          .query_id = ovlps.front().query_id,
+          .query_length = ovlps.front().query_length,
+          .query_start = ovlps.front().query_start,
+          .query_end = ovlps.back().query_end,
 
-              .target_id = ovlps.front().overlap.target_id,
-              .target_start = ovlps.front().overlap.target_start,
-              .target_end = ovlps.back().overlap.target_end,
-          });
+          .target_id = ovlps.front().target_id,
+          .target_length = ovlps.front().target_length,
+          .target_start = ovlps.front().target_start,
+          .target_end = ovlps.back().target_end,
+      };
     }
 
     return std::nullopt;
@@ -318,18 +233,14 @@ static auto MergeOverlaps(
        i < overlaps.size() && j < overlaps.size(); ++j) {
     if ((overlaps[i].query_id == overlaps[j].query_id &&
          overlaps[i].target_id == overlaps[j].target_id)) {
-      buff.push_back(
-          {.overlap = overlaps[j],
-           .query_score = OverlapQueryScore(cfg, query_reads, overlaps[j])});
+      buff.push_back(overlaps[j]);
     } else {
       if (auto const opt_ovlp = merge_overlaps(buff); opt_ovlp) {
         dst.push_back(*opt_ovlp);
       }
 
       buff.clear();
-      buff.push_back(
-          {.overlap = overlaps[j],
-           .query_score = OverlapQueryScore(cfg, query_reads, overlaps[j])});
+      buff.push_back(overlaps[j]);
 
       i = j;
     }
@@ -342,23 +253,10 @@ static auto MergeOverlaps(
   return dst;
 };
 
-static auto ScoreOverlaps(
-    sniff::Config const& cfg,
-    std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
-    std::vector<sniff::Overlap> overlaps) -> std::vector<OverlapScored> {
-  auto dst = MergeOverlaps(cfg, query_reads, overlaps);
-  std::sort(dst.begin(), dst.end(),
-            [](OverlapScored const& lhs, OverlapScored const& rhs) -> bool {
-              return lhs.query_score > rhs.query_score;
-            });
-
-  return dst;
-}
-
 static auto MapMatches(
     sniff::Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
-    std::vector<sniff::Match> matches) -> std::optional<sniff::Overlap> {
+    std::vector<sniff::Match> matches) -> std::vector<sniff::Overlap> {
   auto target_intervals = std::vector<std::uint32_t>{0};
   for (std::uint32_t i = 0; i < matches.size(); ++i) {
     if (i + 1 == matches.size() ||
@@ -367,48 +265,40 @@ static auto MapMatches(
     }
   }
 
-  auto dst_overlaps =
-      std::vector<std::optional<sniff::Overlap>>(matches.size());
+  auto ovlps_buff = std::vector<std::vector<sniff::Overlap>>(matches.size());
   tbb::parallel_for(
       std::size_t(0), target_intervals.size() - 1,
       [&cfg, query_reads, &matches, &target_intervals,
-       &dst_overlaps](std::size_t read_idx) -> void {
+       &ovlps_buff](std::size_t read_idx) -> void {
         auto local_matches =
             std::span(matches.begin() + target_intervals[read_idx],
                       matches.begin() + target_intervals[read_idx + 1]);
 
-        auto local_overlaps =
+        ovlps_buff[read_idx] =
             [&cfg, query_reads](std::vector<sniff::Overlap> overlaps)
-            -> std::vector<OverlapScored> {
-          return ScoreOverlaps(cfg, query_reads, overlaps);
+            -> std::vector<sniff::Overlap> {
+          using namespace std::placeholders;
+          auto const get_read = std::bind(GetReadRefFromSpan, query_reads, _1);
+          for (auto& ovlp : overlaps) {
+            ovlp.query_length = get_read(ovlp.query_id)->inflated_len;
+            ovlp.target_length = get_read(ovlp.target_id)->inflated_len;
+          }
+
+          return MergeOverlaps(cfg, query_reads, overlaps);
         }(Map({.min_chain_length = 4,
                .max_chain_gap_length = 800,
                .kmer_len = cfg.kmer_len},
               local_matches));
-
-        if (local_overlaps.size() >= 1 &&
-            local_overlaps.front().query_score >= cfg.beta_p - 1e-6) {
-          dst_overlaps[read_idx] = local_overlaps.front().overlap;
-        }
       });
 
-  auto max_strength = 0.0;
-  auto dst = std::optional<sniff::Overlap>();
-  for (auto const& ovlp : dst_overlaps) {
-    if (ovlp && OverlapQueryScore(cfg, query_reads, *ovlp) > max_strength) {
-      max_strength = OverlapQueryScore(cfg, query_reads, *ovlp);
-      dst = ovlp;
-    }
-  }
-
-  return dst;
+  return FlattenOverlapVec(std::move(ovlps_buff));
 }
 
 static auto MapSketchToIndex(
     sniff::Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
     sniff::Sketch const& sketch, KMerLocIndex const& index, double threshold)
-    -> std::optional<sniff::Overlap> {
+    -> std::vector<sniff::Overlap> {
   auto const min_short_long_ratio = 1.0 - cfg.alpha_p;
   auto read_matches = std::vector<sniff::Match>();
 
@@ -472,49 +362,21 @@ static auto MapSpanToIndex(
   auto const minimize_cfg = sniff::MinimizeConfig{
       .kmer_len = cfg.kmer_len, .window_len = cfg.window_len, .minhash = false};
 
-  auto opt_ovlps =
-      std::vector<std::optional<sniff::Overlap>>(query_reads.size());
+  auto ovlps_buff =
+      std::vector<std::vector<sniff::Overlap>>(query_reads.size());
   tbb::parallel_for(std::size_t(0), query_reads.size(),
                     [&cfg, query_reads, &target_index, threshold, &minimize_cfg,
-                     &opt_ovlps](std::size_t idx) {
+                     &ovlps_buff](std::size_t idx) {
                       auto sketch = sniff::Sketch{
                           .read_id = query_reads[idx]->id,
                           .minimizers = Minimize(
                               minimize_cfg, query_reads[idx]->InflateData())};
 
-                      opt_ovlps[idx] = MapSketchToIndex(
+                      ovlps_buff[idx] = MapSketchToIndex(
                           cfg, query_reads, sketch, target_index, threshold);
                     });
 
-  auto dst = std::vector<sniff::Overlap>();
-  for (auto const& opt_ovlp : opt_ovlps) {
-    if (opt_ovlp) {
-      dst.push_back(*opt_ovlp);
-    }
-  }
-
-  return dst;
-}
-
-static auto MakeOverlapPairs(
-    sniff::Config const& cfg,
-    std::span<std::unique_ptr<biosoup::NucleicAcid> const> reads,
-    std::vector<sniff::Overlap> ovlps) -> std::vector<sniff::RcPair> {
-  auto dst = std::vector<sniff::RcPair>();
-  for (auto const& ovlp : ovlps) {
-    if ((ovlp.query_id == 0 && ovlp.target_id == 0) ||
-        ovlps[ovlp.target_id] != sniff::ReverseOverlap(ovlp)) {
-      continue;
-    }
-
-    dst.push_back(
-        sniff::RcPair{reads[ovlp.query_id]->name, reads[ovlp.target_id]->name});
-  }
-
-  tbb::parallel_sort(dst, std::less<>{});
-  dst.erase(std::unique(dst.begin(), dst.end()), dst.end());
-
-  return dst;
+  return FlattenOverlapVec(std::move(ovlps_buff));
 }
 
 auto ReindexAndSortReads(
@@ -537,9 +399,12 @@ namespace sniff {
 
 auto FindReverseComplementPairs(
     Config const& cfg, std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
-    -> std::vector<RcPair> {
-  auto ovlps = std::vector<Overlap>(reads.size());
+    -> std::vector<OverlapNamed> {
   reads = ReindexAndSortReads(std::move(reads));
+
+  auto n_ovlps = std::size_t(0);
+  auto ovlps_buff = std::vector<std::vector<sniff::Overlap>>();
+
   auto timer = biosoup::Timer{};
   timer.Start();
 
@@ -561,19 +426,11 @@ auto FindReverseComplementPairs(
     auto index = CreateRcKMerIndex(
         cfg, std::span(reads.cbegin() + i, reads.cbegin() + j));
 
-    auto batch_ovlps = MapSpanToIndex(
+    ovlps_buff.push_back(MapSpanToIndex(
         cfg, std::span(reads.cbegin() + prev_i, reads.cbegin() + j),
         index.locations,
-        GetFrequencyThreshold(index.locations, cfg.filter_freq));
-
-    for (auto& ovlp : batch_ovlps) {
-      if (auto const strength = OverlapScore(cfg, reads, ovlp);
-          OverlapScore(cfg, reads, ovlps[ovlp.query_id]) <= strength &&
-          OverlapScore(cfg, reads, ovlps[ovlp.target_id]) <= strength) {
-        ovlps[ovlp.query_id] = ovlp;
-        ovlps[ovlp.target_id] = ReverseOverlap(ovlp);
-      }
-    }
+        GetFrequencyThreshold(index.locations, cfg.filter_freq)));
+    n_ovlps += ovlps_buff.back().size();
 
     fmt::print(stderr, "\r[FindReverseComplementPairs]({:12.3f}) {:2.3f}%",
                timer.Lap(), 100. * j / reads.size());
@@ -582,9 +439,27 @@ auto FindReverseComplementPairs(
     i = j + 1;
   }
 
-  auto dst = MakeOverlapPairs(cfg, reads, std::move(ovlps));
   fmt::print(stderr, "\n[FindReverseComplementPairs]({:12.3f}) n pairs: {}\n",
-             timer.Stop(), dst.size());
+             timer.Stop(), n_ovlps);
+
+  auto dst = std::vector<OverlapNamed>();
+  dst.reserve(n_ovlps);
+
+  for (auto& ovlp_vec : ovlps_buff) {
+    for (auto const& ovlp : ovlp_vec) {
+      dst.push_back(OverlapNamed{
+          .query_name = reads[ovlp.query_id]->name,
+          .query_length = ovlp.query_length,
+          .query_start = ovlp.query_start,
+          .query_end = ovlp.query_end,
+
+          .target_name = reads[ovlp.target_id]->name,
+          .target_length = ovlp.target_length,
+          .target_start = ovlp.target_start,
+          .target_end = ovlp.target_end,
+      });
+    }
+  }
 
   return dst;
 }
