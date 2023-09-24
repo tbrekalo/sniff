@@ -2,7 +2,7 @@
 
 Heuristic tool for pairing up reverse complement reads in fasta/fastq files.
 
-![ci](https://github.com/tbrekalo/sniff/actions/workflows/ci.yml/badge.svg)
+![ci](https://github.com/tbrekalo/sniff/actions/workflows/ci.yml/badge.svg?branch=master)
 
 ## Methods
 
