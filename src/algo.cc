@@ -175,21 +175,6 @@ static auto CreateRcKMerIndex(
           .kmers = std::move(target_kmers)};
 }
 
-static auto OverlapTargetScore(
-    sniff::Config const& cfg,
-    std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
-    sniff::Overlap const& src_ovlp) -> double {
-  using namespace std::placeholders;
-  auto const get_read = std::bind(GetReadRefFromSpan, query_reads, _1);
-
-  auto const target_covg_len =
-      1. * (src_ovlp.target_end - src_ovlp.target_start);
-  auto const target_len = 1. * get_read(src_ovlp.target_id)->inflated_len;
-
-  return (target_covg_len > cfg.beta_p * target_len) *
-         (target_covg_len / target_len);
-}
-
 // Assumes that the input is grouped by (query_id, target_id) pairs and overlaps
 // in a group are non-overlapping and sorted by ascending (query, target)
 // positions.
@@ -203,16 +188,34 @@ static auto MergeOverlaps(
   }
 
   auto buff = std::vector<sniff::Overlap>{overlaps.front()};
-  auto merge_overlaps = [&cfg,
-                         query_reads](std::span<sniff::Overlap const> ovlps)
-      -> std::optional<sniff::Overlap> {
-    if (auto const score_sum = std::transform_reduce(
-            ovlps.begin(), ovlps.end(), 0., std::plus<>{},
-            [](sniff::Overlap const& ovlp) -> double {
-              return static_cast<double>(ovlp.query_end - ovlp.query_start) /
-                     ovlp.query_length;
-            });
-        score_sum > cfg.beta_p) {
+  auto merge_overlaps =
+      [&cfg, query_reads](
+          std::vector<sniff::Overlap> ovlps) -> std::optional<sniff::Overlap> {
+    if (ovlps.empty()) {
+      return std::nullopt;
+    }
+
+    std::sort(ovlps.begin(), ovlps.end(),
+              [](sniff::Overlap const& lhs, sniff::Overlap const& rhs) -> bool {
+                return lhs.query_start < rhs.query_start;
+              });
+
+    if (not std::is_sorted(
+            ovlps.begin(), ovlps.end(),
+            [](sniff::Overlap const& lhs, sniff::Overlap const& rhs) -> bool {
+              return lhs.target_start < rhs.target_start;
+            })) {
+      return std::nullopt;
+    }
+    auto const query_score = static_cast<double>(ovlps.back().query_end -
+                                                 ovlps.front().query_start) /
+                             ovlps.front().query_length;
+
+    auto const target_score = static_cast<double>(ovlps.back().target_end -
+                                                  ovlps.front().target_start) /
+                              ovlps.front().target_length;
+
+    if (query_score > cfg.beta_p && target_score > cfg.beta_p) {
       return sniff::Overlap{
           .query_id = ovlps.front().query_id,
           .query_length = ovlps.front().query_length,
@@ -257,6 +260,11 @@ static auto MapMatches(
     sniff::Config const& cfg,
     std::span<std::unique_ptr<biosoup::NucleicAcid> const> query_reads,
     std::vector<sniff::Match> matches) -> std::vector<sniff::Overlap> {
+  std::sort(matches.begin(), matches.end(),
+            [](sniff::Match const& lhs, sniff::Match const& rhs) -> bool {
+              return lhs.target_id < rhs.target_id;
+            });
+
   auto target_intervals = std::vector<std::uint32_t>{0};
   for (std::uint32_t i = 0; i < matches.size(); ++i) {
     if (i + 1 == matches.size() ||
@@ -346,11 +354,6 @@ static auto MapSketchToIndex(
         cl->second.value);
   }
 
-  std::sort(read_matches.begin(), read_matches.end(),
-            [](sniff::Match const& lhs, sniff::Match const& rhs) -> bool {
-              return lhs.target_id < rhs.target_id;
-            });
-
   return MapMatches(cfg, query_reads, std::move(read_matches));
 }
 
@@ -379,7 +382,7 @@ static auto MapSpanToIndex(
   return FlattenOverlapVec(std::move(ovlps_buff));
 }
 
-auto ReindexAndSortReads(
+auto SortReadsAndReindex(
     std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
     -> std::vector<std::unique_ptr<biosoup::NucleicAcid>> {
   std::sort(reads.begin(), reads.end(),
@@ -400,7 +403,7 @@ namespace sniff {
 auto FindReverseComplementPairs(
     Config const& cfg, std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
     -> std::vector<OverlapNamed> {
-  reads = ReindexAndSortReads(std::move(reads));
+  reads = SortReadsAndReindex(std::move(reads));
 
   auto n_ovlps = std::size_t(0);
   auto ovlps_buff = std::vector<std::vector<sniff::Overlap>>();
