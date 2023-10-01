@@ -1,5 +1,6 @@
-autopep8
-isort
-mypy
-pylint
-pyright
+autopep8==2.0.2
+isort==5.12.0
+mypy==1.4.0
+mypy-extensions==1.0.0
+pylint==2.17.4
+pyright==1.1.315
