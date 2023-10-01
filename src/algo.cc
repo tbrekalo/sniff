@@ -30,13 +30,13 @@ static constexpr auto kCoefs = std::tuple{
 
 template <class... Args>
 requires((std::is_integral_v<Args> || std::is_floating_point_v<Args>) ||
-         ...) static constexpr auto PredictIsValidOvlp(std::tuple<Args...> args)
-    -> bool {
+         ...) static constexpr auto ScoreOvlp(std::tuple<Args...> args)
+    -> double {
   auto x = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
     return (kIntercept + ... + (std::get<Is>(kCoefs) * std::get<Is>(args)));
   }
   (std::make_index_sequence<sizeof...(Args)>{});
-  return (1. / (1. + std::exp(-x))) >= 0.50;
+  return (1. / (1. + std::exp(-x)));
 }
 
 template <class... Ts>
@@ -243,21 +243,23 @@ static auto MergeOverlaps(
     auto const target_rhs_overhang =
         static_cast<double>(target_len - ovlps.front().target_end) / target_len;
 
-    if (query_score > cfg.beta_p && target_score > cfg.beta_p &&
-        PredictIsValidOvlp(std::tuple(
-            query_score, query_lhs_overhang, query_rhs_overhang, target_score,
-            target_lhs_overhang, target_rhs_overhang))) {
-      return sniff::Overlap{
-          .query_id = ovlps.front().query_id,
-          .query_length = ovlps.front().query_length,
-          .query_start = ovlps.front().query_start,
-          .query_end = ovlps.back().query_end,
+    auto const ovlp_score = ScoreOvlp(
+        std::tuple(query_score, query_lhs_overhang, query_rhs_overhang,
+                   target_score, target_lhs_overhang, target_rhs_overhang));
 
-          .target_id = ovlps.front().target_id,
-          .target_length = ovlps.front().target_length,
-          .target_start = ovlps.front().target_start,
-          .target_end = ovlps.back().target_end,
-      };
+    if (query_score > cfg.beta_p && target_score > cfg.beta_p &&
+        ovlp_score > 0.50) {
+      return sniff::Overlap{.query_id = ovlps.front().query_id,
+                            .query_length = ovlps.front().query_length,
+                            .query_start = ovlps.front().query_start,
+                            .query_end = ovlps.back().query_end,
+
+                            .target_id = ovlps.front().target_id,
+                            .target_length = ovlps.front().target_length,
+                            .target_start = ovlps.front().target_start,
+                            .target_end = ovlps.back().target_end,
+
+                            .score = ovlp_score};
     }
 
     return std::nullopt;
@@ -435,9 +437,11 @@ auto FindReverseComplementPairs(
     Config const& cfg, std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
     -> std::vector<OverlapNamed> {
   reads = SortReadsAndReindex(std::move(reads));
+  auto const delim = reads.size() + 1;
 
-  auto n_ovlps = std::size_t(0);
-  auto ovlps_buff = std::vector<std::vector<sniff::Overlap>>();
+  auto ovlps = std::vector<sniff::Overlap>(
+      reads.size(),
+      sniff::Overlap{.query_id = static_cast<std::uint32_t>(delim)});
 
   auto timer = biosoup::Timer{};
   timer.Start();
@@ -460,11 +464,17 @@ auto FindReverseComplementPairs(
     auto index = CreateRcKMerIndex(
         cfg, std::span(reads.cbegin() + i, reads.cbegin() + j));
 
-    ovlps_buff.push_back(MapSpanToIndex(
+    auto batch_ovlps = MapSpanToIndex(
         cfg, std::span(reads.cbegin() + prev_i, reads.cbegin() + j),
         index.locations,
-        GetFrequencyThreshold(index.locations, cfg.filter_freq)));
-    n_ovlps += ovlps_buff.back().size();
+        GetFrequencyThreshold(index.locations, cfg.filter_freq));
+
+    for (auto const& ovlp : batch_ovlps) {
+      if (ovlp.score > ovlps[ovlp.query_id].score &&
+          ovlp.score > ovlps[ovlp.target_id].score) {
+        ovlps[ovlp.query_id] = ovlps[ovlp.target_id] = ovlp;
+      }
+    }
 
     fmt::print(stderr, "\r[FindReverseComplementPairs]({:12.3f}) {:2.3f}%",
                timer.Lap(), 100. * j / reads.size());
@@ -473,26 +483,33 @@ auto FindReverseComplementPairs(
     i = j + 1;
   }
 
+  ovlps.erase(std::remove_if(ovlps.begin(), ovlps.end(),
+                             [delim](sniff::Overlap const& ovlp) -> bool {
+                               return ovlp.query_id == delim;
+                             }),
+              ovlps.end());
+
+  std::sort(ovlps.begin(), ovlps.end());
+  ovlps.erase(std::unique(ovlps.begin(), ovlps.end()), ovlps.end());
+
   fmt::print(stderr, "\n[FindReverseComplementPairs]({:12.3f}) n pairs: {}\n",
-             timer.Stop(), n_ovlps);
+             timer.Stop(), ovlps.size());
 
   auto dst = std::vector<OverlapNamed>();
-  dst.reserve(n_ovlps);
+  dst.reserve(ovlps.size());
 
-  for (auto& ovlp_vec : ovlps_buff) {
-    for (auto ovlp : ovlp_vec) {
-      dst.push_back(OverlapNamed{
-          .query_name = reads[ovlp.query_id]->name,
-          .query_length = ovlp.query_length,
-          .query_start = ovlp.query_start,
-          .query_end = ovlp.query_end,
+  for (auto ovlp : ovlps) {
+    dst.push_back(OverlapNamed{
+        .query_name = reads[ovlp.query_id]->name,
+        .query_length = ovlp.query_length,
+        .query_start = ovlp.query_start,
+        .query_end = ovlp.query_end,
 
-          .target_name = reads[ovlp.target_id]->name,
-          .target_length = ovlp.target_length,
-          .target_start = ovlp.target_start,
-          .target_end = ovlp.target_end,
-      });
-    }
+        .target_name = reads[ovlp.target_id]->name,
+        .target_length = ovlp.target_length,
+        .target_start = ovlp.target_start,
+        .target_end = ovlp.target_end,
+    });
   }
 
   return dst;

@@ -17,6 +17,8 @@ struct Overlap {
   std::uint32_t target_start;
   std::uint32_t target_end;
 
+  double score;
+
   friend constexpr auto operator<=>(const Overlap& lhs,
                                     const Overlap& rhs) = default;
 };
