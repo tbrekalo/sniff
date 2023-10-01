@@ -7,10 +7,12 @@ namespace sniff {
 auto ReverseOverlap(Overlap const& ovlp) -> Overlap {
   return {
       .query_id = ovlp.target_id,
+      .query_length = ovlp.target_length,
       .query_start = ovlp.target_start,
       .query_end = ovlp.target_end,
 
       .target_id = ovlp.query_id,
+      .target_length = ovlp.query_length,
       .target_start = ovlp.query_start,
       .target_end = ovlp.query_end,
   };

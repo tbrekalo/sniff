@@ -24,6 +24,21 @@ static constexpr auto kIndexSize = 1U << 30U;
 
 static constexpr auto kIntercept = -23.47084474;
 
+static constexpr auto kCoefs = std::tuple{
+    9.42746909, -6.64572836, -2.78147289, 16.18407094, -7.31525403, -8.86853227,
+};
+
+template <class... Args>
+requires((std::is_integral_v<Args> || std::is_floating_point_v<Args>) ||
+         ...) static constexpr auto PredictIsValidOvlp(std::tuple<Args...> args)
+    -> bool {
+  auto x = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+    return (kIntercept + ... + (std::get<Is>(kCoefs) * std::get<Is>(args)));
+  }
+  (std::make_index_sequence<sizeof...(Args)>{});
+  return (1. / (1. + std::exp(-x))) >= 0.50;
+}
+
 template <class... Ts>
 struct overloaded : Ts... {
   using Ts::operator()...;
@@ -207,15 +222,31 @@ static auto MergeOverlaps(
             })) {
       return std::nullopt;
     }
+
+    auto const query_len = ovlps.front().query_length;
     auto const query_score = static_cast<double>(ovlps.back().query_end -
                                                  ovlps.front().query_start) /
-                             ovlps.front().query_length;
+                             query_len;
 
+    auto const target_len = ovlps.front().target_length;
     auto const target_score = static_cast<double>(ovlps.back().target_end -
                                                   ovlps.front().target_start) /
                               ovlps.front().target_length;
 
-    if (query_score > cfg.beta_p && target_score > cfg.beta_p) {
+    auto const query_lhs_overhang =
+        static_cast<double>(ovlps.front().query_start) / query_len;
+    auto const query_rhs_overhang =
+        static_cast<double>(query_len - ovlps.back().query_end) / query_len;
+
+    auto const target_lhs_overhang =
+        static_cast<double>(ovlps.front().target_start) / target_len;
+    auto const target_rhs_overhang =
+        static_cast<double>(target_len - ovlps.front().target_end) / target_len;
+
+    if (query_score > cfg.beta_p && target_score > cfg.beta_p &&
+        PredictIsValidOvlp(std::tuple(
+            query_score, query_lhs_overhang, query_rhs_overhang, target_score,
+            target_lhs_overhang, target_rhs_overhang))) {
       return sniff::Overlap{
           .query_id = ovlps.front().query_id,
           .query_length = ovlps.front().query_length,
@@ -449,7 +480,7 @@ auto FindReverseComplementPairs(
   dst.reserve(n_ovlps);
 
   for (auto& ovlp_vec : ovlps_buff) {
-    for (auto const& ovlp : ovlp_vec) {
+    for (auto ovlp : ovlp_vec) {
       dst.push_back(OverlapNamed{
           .query_name = reads[ovlp.query_id]->name,
           .query_length = ovlp.query_length,
