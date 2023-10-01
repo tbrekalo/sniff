@@ -2,7 +2,7 @@ import argparse
 import pathlib
 import sys
 from time import perf_counter
-from typing import List, Tuple
+from typing import List
 
 import polars as pl
 from psutil import Popen
