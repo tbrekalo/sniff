@@ -46,14 +46,30 @@ DEFAULT_ARGS = SniffArgs(
 )
 
 
-def format_sniff_args(sniff_args: SniffArgs, reads_path: str) -> List[str]:
+def format_sniff_args(
+    sniff_args: SniffArgs, reads_path: str | pathlib.Path
+) -> List[str]:
+    """Transform SniffArgs model into a list of consecutive key key value pairs.
+    Eg.
+        class KwArgs(BaseModel):
+            a: int
+            b: str
+        args = KwArgs(a=1, b='a')
+
+    Here args object would get transformed into:
+        ['--a' '1' '--b' 'a']
+
+    Args:
+        sniff_args: SniffArgs model representing cli arguments
+        reads_path: path to fasta/fastq files forwarded to sniff
+    """
     dst = [
         val for k, v in sniff_args.dict().items()
         for val in ('--' + k.replace('_', '-'), str(v))
         if k != 'minhash'
     ]
 
-    dst.append(reads_path)
+    dst.append(str(reads_path))
     return dst
 
 
@@ -61,15 +77,38 @@ def create_sniff_spawn_list(
         sniff_path: str | pathlib.Path,
         sniff_args: SniffArgs,
         reads_path: str | pathlib.Path) -> List[str]:
+    """Create a list of strings passed to Popen like function for running sniff.
+
+    Args:
+        sniff_path: string path to sniff executable
+        sniff_args: SniffArgs model representing cli arguments
+        reads_path: path to fasta/fastq reads forwarded to sniff
+
+    Returns:
+        A list of strings in format:
+        [sniff_path_str, *sniff_cli_args, reads]
+    """
     return [
         str(sniff_path), *format_sniff_args(sniff_args, str(reads_path))
     ]
 
 
 def run_sniff(
-        sniff_path: str,
+        sniff_path: str | pathlib.Path,
         sniff_args: SniffArgs,
         reads_path: str | pathlib.Path) -> pl.DataFrame:
+    """Runs sniff executable monitoring it's runtime and memory consumption.
+    Sniff stderr and stdout are not piped nor captured in anyform.
+
+    Args:
+        sniff_path: string path to sniff executable
+        sniff_args: SniffArgs model representing cli arguments
+        reads_path: path to fasta/fastq reads forwarded to sniff
+
+    Returns:
+        A polars DataFrame with runtime information.
+        See DF_COLS for more details.
+    """
 
     with Popen(create_sniff_spawn_list(
         sniff_path, sniff_args, reads_path)
@@ -92,7 +131,7 @@ def run_sniff(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        prog='rc_stats',
+        prog='run_sniff',
         description='run sniff and record runtime information'
     )
 
