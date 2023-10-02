@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "sniff/config.h"
+#include "sniff/overlap.h"
 
 namespace biosoup {
 class NucleicAcid;
@@ -12,15 +13,8 @@ class NucleicAcid;
 
 namespace sniff {
 
-struct RcPair {
-  std::string lhs;
-  std::string rhs;
-
-  auto operator<=>(RcPair const&) const noexcept = default;
-};
-
 auto FindReverseComplementPairs(
     Config const& cfg, std::vector<std::unique_ptr<biosoup::NucleicAcid>> reads)
-    -> std::vector<RcPair>;
+    -> std::vector<OverlapNamed>;
 
 }  // namespace sniff

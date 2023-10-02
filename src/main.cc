@@ -85,8 +85,7 @@ int main(int argc, char** argv) {
           .beta_p = result["beta"].as<double>(),
           .filter_freq = result["frequent"].as<double>(),
           .kmer_len = result["kmer-length"].as<std::uint32_t>(),
-          .window_len = result["window-length"].as<std::uint32_t>()
-          };
+          .window_len = result["window-length"].as<std::uint32_t>()};
 
       /* clang-format off */
         fmt::print(stderr,
@@ -99,10 +98,16 @@ int main(int argc, char** argv) {
           cfg.filter_freq, cfg.kmer_len, cfg.window_len);
       /* clang-format on */
 
-      auto pairs =
+      auto overlaps =
           sniff::FindReverseComplementPairs(cfg, sniff::LoadReads(reads_path));
-      for (auto const& [lhs, rhs] : pairs) {
-        fmt::print("{},{}\n", lhs, rhs);
+      fmt::print(
+          "query_name,query_length,query_start,"
+          "query_end,target_name,target_length,target_start,target_end\n");
+      for (auto const& ovlp : overlaps) {
+        fmt::print("{},{},{},{},{},{},{},{}\n", ovlp.query_name,
+                   ovlp.query_length, ovlp.query_start, ovlp.query_end,
+                   ovlp.target_name, ovlp.target_length, ovlp.target_start,
+                   ovlp.target_end);
       }
     });
 
