@@ -3,6 +3,7 @@
 	debug \
 	relwithdebinfo \
 	release \
+	python-dev \
 	clean
 
 GEN:="Unix Makefiles"
@@ -10,6 +11,17 @@ NINJA_PATH:=$(shell command -v ninja 2> /dev/null)
 ifdef NINJA_PATH
 	GEN:="Ninja"
 endif
+
+venv: requirements.txt
+	@python3 -m venv ./venv
+	@bash -c 'source venv/bin/activate; pip install -U pip -r requirements.txt';
+
+python-dev: venv
+	@bash -c \
+		'source venv/bin/activate; pip install -U pip -r requirements-dev.txt';
+
+clean-venv:
+	rm -rf venv;
 
 build-debug: conanfile.txt
 	conan install . --output-folder=$@ \
@@ -51,15 +63,16 @@ build: conanfile.txt
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
 		-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake;
 
-release: build
+release: venv build
 	cd build; \
 	cmake --build .;
 
 clean-release:
 	rm -rf build;
 
-clean: clean-debug clean-relwithdebinfo clean-release
+clean: clean-venv clean-debug clean-relwithdebinfo clean-release
 	@:
+
 
 all: debug relwithdebinfo release
 	@:
