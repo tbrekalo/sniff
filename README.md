@@ -16,6 +16,7 @@ Sniff loads sequences in batches displaying progress along the way. Once all seq
 - clang 11 or higher
 - intel tbb 2020.3
   - should be compatible with later oneapi versions
+- conan2 with configured profile
 - cmake 3.21 or higher
 - git 2.25.1 or higher
   - earlier version should do just fine
@@ -27,13 +28,13 @@ Sniff loads sequences in batches displaying progress along the way. Once all seq
   - fetched via cmake if missing
 
 ### Python
-conan2==0.0.4
-joblib==1.3.2
-lightgbm==4.1.0
-polars==0.18.5
-psutil==5.9.5
-pydantic==1.10.9
-scikit-learn==1.3.1
+- conan2==0.0.4
+- joblib==1.3.2
+- lightgbm==4.1.0
+- polars==0.18.5
+- psutil==5.9.5
+- pydantic==1.10.9
+- scikit-learn==1.3.1
 
 ## Build
 
@@ -49,6 +50,6 @@ From sniff root directory:
 
 ```bash
 source ./venv/bin/activate
-sniff -t 32 path_to_reads.fasta > /tmp/sniff-ovlps.csv
+./build/bin/sniff -t 32 path_to_reads.fasta > /tmp/sniff.csv
 python ./scripts/inference/lgbm_filter.py -m resources/sniff-lgbm-model.pkl -o /tmp/sniff.csv > pairs.csv
 ```
