@@ -1,3 +1,4 @@
+conan2==0.0.4
 joblib==1.3.2
 lightgbm==4.1.0
 polars==0.18.5
